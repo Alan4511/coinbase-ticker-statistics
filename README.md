@@ -1,6 +1,6 @@
-# Coinbase ticker statistics
+# Coinbase Ticker Statistics
 
-Project blueprint for the Sparkland assignment. Implementation and dependency
+Project blueprint for the Coinbase ticker statistics assignment. Implementation and dependency
 choices will be developed after discussing the design.
 
 ## Requirements
@@ -22,7 +22,7 @@ are outside the assignment's scope.
 ## Proposed layout
 
 ```text
-sparkland/
+coinbase-ticker-statistics/
   README.md
   src/
     app/          # Configuration, orchestration, and executable entry point
@@ -46,7 +46,7 @@ cmake --build build
 
 The component targets are scaffolded; the executable and test targets will be
 added as their implementation and test sources are introduced. The project is
-self-contained and can be packaged and built from the `sparkland/` folder.
+self-contained and can be packaged and built from the repository root.
 
 ## Proposed processing flow
 

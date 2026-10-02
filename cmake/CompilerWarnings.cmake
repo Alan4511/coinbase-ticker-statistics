@@ -1,6 +1,6 @@
-function(sparkland_enable_warnings target)
+function(coinbase_ticker_statistics_enable_warnings target)
     if(NOT TARGET "${target}")
-        message(FATAL_ERROR "sparkland_enable_warnings: '${target}' is not a target")
+        message(FATAL_ERROR "coinbase_ticker_statistics_enable_warnings: '${target}' is not a target")
     endif()
 
     target_compile_options("${target}" PRIVATE

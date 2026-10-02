@@ -1,8 +1,8 @@
-file(GLOB SPARKLAND_TEST_SOURCES CONFIGURE_DEPENDS
+file(GLOB COINBASE_TICKER_STATISTICS_TEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp"
 )
 
-if(NOT SPARKLAND_TEST_SOURCES)
+if(NOT COINBASE_TICKER_STATISTICS_TEST_SOURCES)
     return()
 endif()
 
@@ -17,20 +17,20 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-add_executable(sparkland_tests
-    ${SPARKLAND_TEST_SOURCES}
+add_executable(coinbase_ticker_statistics_tests
+    ${COINBASE_TICKER_STATISTICS_TEST_SOURCES}
 )
 
-target_link_libraries(sparkland_tests PRIVATE
-    sparkland_application
+target_link_libraries(coinbase_ticker_statistics_tests PRIVATE
+    coinbase_ticker_statistics_application
     GTest::gtest_main
 )
 
-target_compile_definitions(sparkland_tests PRIVATE
-    SPARKLAND_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+target_compile_definitions(coinbase_ticker_statistics_tests PRIVATE
+    COINBASE_TICKER_STATISTICS_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
 )
 
-sparkland_enable_warnings(sparkland_tests)
+coinbase_ticker_statistics_enable_warnings(coinbase_ticker_statistics_tests)
 
 include(GoogleTest)
-gtest_discover_tests(sparkland_tests)
+gtest_discover_tests(coinbase_ticker_statistics_tests)
