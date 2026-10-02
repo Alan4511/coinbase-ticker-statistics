@@ -1,0 +1,18 @@
+# CMake build trees and generated metadata
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/CTestTestfile.cmake
+/cmake_install.cmake
+/Makefile
+/Testing/
+/compile_commands.json
+/.cache/
+
+# IDE and editor state
+.clangd/
+.vscode/
+.idea/
+
+# OS files
+.DS_Store

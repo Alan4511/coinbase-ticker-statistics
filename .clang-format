@@ -1,0 +1,29 @@
+BasedOnStyle: LLVM
+# Keep the project's existing indentation and line width.
+IndentWidth: 4
+ContinuationIndentWidth: 4
+UseTab: Never
+ColumnLimit: 120
+
+# Prefer multiline bodies, even when they would fit on a single line.
+AllowShortFunctionsOnASingleLine: None
+AllowShortLambdasOnASingleLine: None
+AllowShortBlocksOnASingleLine: Never
+AllowShortEnumsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+
+# Use one argument/parameter per line when a signature or call needs wrapping.
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+
+# Preserve the existing brace and pointer/reference conventions.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  BeforeElse: true
+DerivePointerAlignment: false
+PointerAlignment: Right
