@@ -1,0 +1,10 @@
+{"type":"subscriptions","channels":[{"name":"ticker","product_ids":["BTC-USD","ETH-USD"]}]}
+{"type":"ticker","product_id":"BTC-USD","trade_id":1,"price":"100.00","time":"2026-10-03T00:00:00Z"}
+{"type":"ticker","product_id":"ETH-USD","trade_id":1,"price":"10.00","time":"2026-10-03T00:00:00Z"}
+{"type":"ticker","product_id":"BTC-USD","trade_id":2,"price":"102.00","time":"2026-10-03T00:01:00Z"}
+{"type":"ticker","product_id":"BTC-USD","trade_id":2,"price":"102.00","time":"2026-10-03T00:01:00Z"}
+{"type":"ticker","product_id":"BTC-USD","trade_id":3,"price":"104.00","time":"2026-10-03T00:05:00Z"}
+{"type":"ticker","product_id":"ETH-USD","trade_id":2,"price":"12.00","time":"2026-10-03T00:06:00Z"}
+{"type":"ticker","product_id":"BTC-USD","trade_id":4,"price":"106.00","time":"2026-10-03T00:05:01Z"}
+{"type":"ticker","product_id":"BTC-USD","trade_id":5,"price":"108.00","time":"2026-10-03T00:11:40Z"}
+{"type":"heartbeat","product_id":"BTC-USD"}

@@ -1,0 +1,31 @@
+{
+  "connections": [
+    {
+      "symbols": [
+        "BTC-USD"
+      ]
+    },
+    {
+      "symbols": [
+        "ETH-USD",
+        "SOL-USD"
+      ]
+    }
+  ],
+  "feed": {
+    "host": "ws-feed.exchange.coinbase.com",
+    "port": "443",
+    "target": "/",
+    "connect_timeout_seconds": 15,
+    "close_timeout_seconds": 5,
+    "max_message_bytes": 1048576
+  },
+  "window": {
+    "duration_seconds": 300
+  },
+  "output": {
+    "path": "../build/live.csv",
+    "flush_every_rows": 1,
+    "flush_interval_ms": 1000
+  }
+}

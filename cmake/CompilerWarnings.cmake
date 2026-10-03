@@ -24,7 +24,6 @@ function(coinbase_ticker_statistics_enable_warnings target)
             -Werror
         >
         $<$<CXX_COMPILER_ID:GNU>:
-            -Wuseless-cast
             -Wlogical-op
             -Wduplicated-cond
             -Wduplicated-branches

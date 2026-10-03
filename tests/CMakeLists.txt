@@ -1,13 +1,6 @@
-file(GLOB COINBASE_TICKER_STATISTICS_TEST_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp"
-)
-
-if(NOT COINBASE_TICKER_STATISTICS_TEST_SOURCES)
-    return()
-endif()
-
 include(FetchContent)
 
+# Keep the test dependency pinned so a fresh configure is reproducible.
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     googletest
@@ -17,13 +10,24 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-add_executable(coinbase_ticker_statistics_tests
-    ${COINBASE_TICKER_STATISTICS_TEST_SOURCES}
+add_executable(coinbase_ticker_statistics_tests)
+
+add_subdirectory(statistics)
+add_subdirectory(feed)
+add_subdirectory(output)
+add_subdirectory(config)
+add_subdirectory(app)
+
+target_include_directories(coinbase_ticker_statistics_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 target_link_libraries(coinbase_ticker_statistics_tests PRIVATE
     coinbase_ticker_statistics_application
     GTest::gtest_main
+    nlohmann_json::nlohmann_json
+    OpenSSL::SSL
+    Threads::Threads
 )
 
 target_compile_definitions(coinbase_ticker_statistics_tests PRIVATE
@@ -33,4 +37,4 @@ target_compile_definitions(coinbase_ticker_statistics_tests PRIVATE
 coinbase_ticker_statistics_enable_warnings(coinbase_ticker_statistics_tests)
 
 include(GoogleTest)
-gtest_discover_tests(coinbase_ticker_statistics_tests)
+gtest_discover_tests(coinbase_ticker_statistics_tests NO_PRETTY_VALUES)

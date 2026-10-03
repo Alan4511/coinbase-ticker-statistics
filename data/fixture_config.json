@@ -1,0 +1,13 @@
+{
+  "connections": [
+    {
+      "symbols": [
+        "BTC-USD",
+        "ETH-USD"
+      ]
+    }
+  ],
+  "output": {
+    "path": "ticker_expected.csv"
+  }
+}

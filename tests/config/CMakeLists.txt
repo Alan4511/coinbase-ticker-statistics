@@ -1,0 +1,1 @@
+target_sources(coinbase_ticker_statistics_tests PRIVATE test_config.cpp)

@@ -11,6 +11,14 @@ option(COINBASE_TICKER_STATISTICS_BUILD_TESTS "Build unit tests" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(CompilerWarnings)
+include(Dependencies)
+
+option(COINBASE_TICKER_STATISTICS_SANITIZERS "Enable address and undefined-behavior sanitizers" OFF)
+set(COINBASE_TICKER_STATISTICS_SANITIZER_SET "address,undefined" CACHE STRING "Comma-separated compiler sanitizers")
+if(COINBASE_TICKER_STATISTICS_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    add_compile_options(-fsanitize=${COINBASE_TICKER_STATISTICS_SANITIZER_SET} -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=${COINBASE_TICKER_STATISTICS_SANITIZER_SET})
+endif()
 
 add_subdirectory(src)
 
