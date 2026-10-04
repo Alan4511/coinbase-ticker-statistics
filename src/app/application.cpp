@@ -1,6 +1,6 @@
 #include "app/application.hpp"
 #include "app/application_feed_handler.hpp"
-#include <feed/transport/ticker_feed.hpp>
+#include <feed/ticker_feed.hpp>
 #include <output/csv_sink.hpp>
 
 #include <boost/asio/signal_set.hpp>

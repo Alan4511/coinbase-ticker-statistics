@@ -1,6 +1,6 @@
 #include "test_exchange.hpp"
 #include "test_result.hpp"
-#include <feed/transport/ticker_feed.hpp>
+#include <feed/ticker_feed.hpp>
 
 #include <gtest/gtest.h>
 

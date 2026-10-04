@@ -1,6 +1,6 @@
 #pragma once
 
-#include <feed/transport/feed_handler.hpp>
+#include <feed/feed_handler.hpp>
 #include <output/sink.hpp>
 #include <statistics/statistics_processor.hpp>
 

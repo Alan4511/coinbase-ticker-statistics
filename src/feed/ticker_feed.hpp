@@ -3,7 +3,7 @@
 #include "feed/parser/ticker_parser.hpp"
 #include "feed/subscription.hpp"
 #include "feed/transport/feed_connection.hpp"
-#include "feed/transport/feed_handler.hpp"
+#include "feed/feed_handler.hpp"
 #include <result.hpp>
 #include <types.hpp>
 

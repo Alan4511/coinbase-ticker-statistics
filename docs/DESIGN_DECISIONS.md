@@ -18,6 +18,10 @@ JSON decoding, filtering and input counters. The application handler routes each
 typed update through statistics to the sink synchronously. This preserves order
 and gives mutable state one owner without locks.
 
+The feed root exposes `TickerFeed` and its typed handler contract. `parser/`
+contains decoding, while `transport/` contains the reusable connection and its
+settings. Tests mirror these responsibilities.
+
 `StatisticsProcessor` has no networking, logging or output dependencies.
 `OutputSink` is a compile-time contract requiring only
 `write_statistics(update) -> Result<void>`; another sink can reuse the processor
