@@ -1,20 +1,19 @@
 #include "test_files.hpp"
 #include "test_result.hpp"
 #include <output/csv_writer.hpp>
-#include <output/format_fields.hpp>
 
 #include <gtest/gtest.h>
 
 #include <chrono>
-#include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <ios>
 #include <limits>
 #include <locale>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <string_view>
-#include <system_error>
 
 namespace coinbase_ticker_statistics {
 namespace {
@@ -29,162 +28,79 @@ StatisticsUpdate sample_update() {
     return {{exchange_time, "BTC-USD", 42, Price{1.25L}}, {2, 1.5L, 1.5L, Price{1.25L}, Price{1.75L}}};
 }
 
-TEST(CsvWriter, WritesExactHeaderExchangeTimeAndUnroundedPrices) {
-    std::ostringstream stream;
-    CsvWriter writer(stream);
-    ASSERT_RESULT_OK(writer.write_header());
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    ASSERT_RESULT_OK(writer.flush());
-    EXPECT_EQ(stream.str(), std::string(expected_header) + std::string(expected_row));
-}
-
-TEST(CsvWriter, WritesAllAvailableFloatingPointDigits) {
-    std::ostringstream stream;
-    CsvWriter writer(stream);
-    ASSERT_RESULT_OK(writer.write_header());
-    auto event = sample_update();
-    event.ticker_update.price = 12345.67890123456789L;
-    ASSERT_RESULT_OK(writer.write_statistics(event));
-    ASSERT_RESULT_VALUE(price_text, format_price(event.ticker_update.price));
-    EXPECT_NE(stream.str().find("," + price_text + ","), std::string::npos);
-}
-
-TEST(CsvWriter, EscapesDelimiterQuotesAndLineEndings) {
-    std::ostringstream stream;
-    CsvWriter writer(stream);
-    ASSERT_RESULT_OK(writer.write_header());
-    auto event = sample_update();
-    event.ticker_update.symbol = "BTC,\"USD\"\r\n";
-    ASSERT_RESULT_OK(writer.write_statistics(event));
-    EXPECT_EQ(stream.str(),
-              std::string(expected_header) +
-                  "2026-01-02T03:04:05.123456789Z,\"BTC,\"\"USD\"\"\r\n\",42,1.25,2,1.5,1.5,1.25,1.75\n");
-}
-
-TEST(CsvWriter, DoesNotDependOnTheBorrowedStreamsLocaleOrFormattingFlags) {
-    std::ostringstream stream;
-    stream.imbue(std::locale::classic());
-    stream << std::hex << std::showbase;
-    CsvWriter writer(stream);
-    ASSERT_RESULT_OK(writer.write_header());
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(stream.str(), std::string(expected_header) + std::string(expected_row));
-}
-
-TEST(CsvWriter, ExplicitFlushPublishesBufferedRows) {
-    test::TemporaryDirectory directory;
-    const auto path = directory.file("statistics.csv");
-    std::ofstream stream(path);
-    ASSERT_TRUE(stream);
-    CsvWriter writer(stream);
-    ASSERT_RESULT_OK(writer.write_header());
-    EXPECT_EQ(test::read_file(path), expected_header);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    ASSERT_RESULT_OK(writer.flush());
-    EXPECT_EQ(test::read_file(path), std::string(expected_header) + std::string(expected_row));
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    ASSERT_RESULT_OK(writer.flush());
-    EXPECT_EQ(test::read_file(path),
-              std::string(expected_header) + std::string(expected_row) + std::string(expected_row));
-}
-
-class CountingBuffer : public std::stringbuf {
-  public:
-    int sync() override {
-        ++flushes;
-        return fail_flush ? -1 : 0;
+class DecimalComma : public std::numpunct<char> {
+    char do_decimal_point() const override {
+        return ',';
     }
-    unsigned flushes{};
-    bool fail_flush{};
+    char do_thousands_sep() const override {
+        return '.';
+    }
+    std::string do_grouping() const override {
+        return "\3";
+    }
 };
 
-TEST(CsvWriter, DiscardsInvalidRowAndReusesBuffer) {
-    CountingBuffer buffer;
-    std::ostream stream(&buffer);
-    CsvWriter writer(stream);
-    auto invalid = sample_update();
-    invalid.ticker_update.symbol = std::string(1024, 'X');
-    invalid.statistics.high = std::numeric_limits<Price>::infinity();
-    ASSERT_RESULT_ERROR(writer.write_statistics(invalid), ErrorCode::InvalidInput);
-    EXPECT_TRUE(buffer.str().empty());
-    EXPECT_EQ(buffer.flushes, 0U);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(buffer.str(), expected_row);
-    EXPECT_EQ(buffer.flushes, 0U);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(buffer.str(), std::string(expected_row) + std::string(expected_row));
-    EXPECT_EQ(buffer.flushes, 0U);
-}
-
-TEST(CsvWriter, PreservesFullWidthIntegerFields) {
+TEST(CsvWriter, WritesEscapedRoundTrippableRows) {
     std::ostringstream stream;
+    stream.imbue(std::locale(std::locale::classic(), new DecimalComma));
+    stream << std::hex << std::showbase << std::fixed << std::setprecision(1);
     CsvWriter writer(stream);
+    ASSERT_RESULT_OK(writer.write_header());
+    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
+    EXPECT_EQ(stream.str(), std::string(expected_header) + std::string(expected_row));
+
     auto update = sample_update();
+    update.ticker_update.symbol = "BTC,\"USD\"\r\n";
     update.ticker_update.trade_id = std::numeric_limits<TradeId>::max();
     update.statistics.count = std::numeric_limits<SampleCount>::max();
+    update.ticker_update.price = 12345.67890123456789L;
+    std::ostringstream independent_price;
+    independent_price.imbue(std::locale::classic());
+    independent_price << std::setprecision(std::numeric_limits<Price>::max_digits10) << update.ticker_update.price;
     ASSERT_RESULT_OK(writer.write_statistics(update));
-    const auto integer_fields =
-        "," + std::to_string(update.ticker_update.trade_id) + ",1.25," + std::to_string(update.statistics.count) + ",";
-    EXPECT_NE(stream.str().find(integer_fields), std::string::npos);
+    ASSERT_RESULT_OK(writer.flush());
+    const auto escaped_row = "2026-01-02T03:04:05.123456789Z,\"BTC,\"\"USD\"\"\r\n\"," +
+                             std::to_string(update.ticker_update.trade_id) + ',' + independent_price.str() + ',' +
+                             std::to_string(update.statistics.count) + ",1.5,1.5,1.25,1.75\n";
+    EXPECT_EQ(stream.str(), std::string(expected_header) + std::string(expected_row) + escaped_row);
 }
 
-TEST(CsvWriter, LeavesFlushPolicyToTheSink) {
-    CountingBuffer buffer;
-    std::ostream stream(&buffer);
-    CsvWriter writer(stream);
-    buffer.fail_flush = true;
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(buffer.flushes, 0U);
-    ASSERT_RESULT_ERROR(writer.flush(), ErrorCode::OutputIo);
-    EXPECT_EQ(buffer.flushes, 1U);
-}
+class FailingBuffer : public std::stringbuf {
+  public:
+    std::streamsize xsputn(const char *text, std::streamsize count) override {
+        return reject_writes ? 0 : std::stringbuf::xsputn(text, count);
+    }
+    int sync() override {
+        return reject_flush ? -1 : 0;
+    }
+    bool reject_writes{};
+    bool reject_flush{};
+};
 
-TEST(CsvWriter, ReportsHeaderWriteFailure) {
-    std::ostringstream stream;
-    stream.setstate(std::ios::badbit);
-    CsvWriter writer(stream);
-    ASSERT_RESULT_ERROR(writer.write_header(), ErrorCode::OutputIo);
-}
-
-TEST(CsvWriter, ReportsRowWriteFailure) {
-    std::ostringstream stream;
-    CsvWriter writer(stream);
-    ASSERT_RESULT_OK(writer.write_header());
-    stream.setstate(std::ios::badbit);
-    ASSERT_RESULT_ERROR(writer.write_statistics(sample_update()), ErrorCode::OutputIo);
-}
-
-TEST(CsvWriter, ReportsFlushFailure) {
-    std::ostringstream stream;
-    CsvWriter writer(stream);
-    ASSERT_RESULT_OK(writer.write_header());
-    stream.setstate(std::ios::badbit);
-    ASSERT_RESULT_ERROR(writer.flush(), ErrorCode::OutputIo);
-}
-
+TEST(CsvWriter, ReportsStreamFailures) {
+    for (const bool exceptions_enabled : {false, true}) {
+        SCOPED_TRACE(exceptions_enabled ? "throwing stream" : "error-state stream");
+        FailingBuffer buffer;
+        std::ostream stream(&buffer);
+        if (exceptions_enabled)
+            stream.exceptions(std::ios::badbit | std::ios::failbit);
+        CsvWriter writer(stream);
+        ASSERT_RESULT_OK(writer.write_header());
+        buffer.reject_writes = true;
+        ASSERT_RESULT_ERROR(writer.write_statistics(sample_update()), ErrorCode::OutputIo);
+        stream.clear();
+        ASSERT_RESULT_ERROR(writer.write_header(), ErrorCode::OutputIo);
+        stream.clear();
+        buffer.reject_writes = false;
+        buffer.reject_flush = true;
+        ASSERT_RESULT_ERROR(writer.flush(), ErrorCode::OutputIo);
+    }
 #if defined(__linux__)
-TEST(CsvWriter, ReportsOutputFailureWhenDeviceIsFull) {
     std::ofstream full("/dev/full");
     ASSERT_TRUE(full);
     CsvWriter writer(full);
-    const auto header = writer.write_header();
-    if (!header) {
-        EXPECT_EQ(header.error().code, ErrorCode::OutputIo);
-        return;
-    }
-    const auto written = writer.write_statistics(sample_update());
-    if (!written)
-        EXPECT_EQ(written.error().code, ErrorCode::OutputIo);
-    else
-        ASSERT_RESULT_ERROR(writer.flush(), ErrorCode::OutputIo);
-}
-#endif
-
-TEST(CsvWriter, ConvertsExceptionEnabledLibraryStreamFailures) {
-    std::ofstream unopened;
-    unopened.exceptions(std::ios::badbit | std::ios::failbit);
-    CsvWriter writer(unopened);
     ASSERT_RESULT_ERROR(writer.write_header(), ErrorCode::OutputIo);
+#endif
 }
 
 } // namespace

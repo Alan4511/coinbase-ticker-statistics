@@ -8,7 +8,7 @@ find_package(Threads REQUIRED)
 find_package(Boost 1.83 QUIET CONFIG)
 
 if(NOT TARGET Boost::headers)
-    # Use only headers: Beast, Asio and fixed-width Multiprecision need no Boost binaries.
+    # Beast and Asio need no Boost binaries.
     FetchContent_Declare(boost_headers
         URL https://archives.boost.io/release/1.88.0/source/boost_1_88_0.tar.bz2
         URL_HASH SHA256=46d9d2c06637b219270877c9e16155cbd015b6dc84349af064c088e9b5b12f7b

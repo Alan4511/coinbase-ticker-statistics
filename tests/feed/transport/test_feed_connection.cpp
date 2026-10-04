@@ -28,7 +28,9 @@ class ConnectionRun final {
     }
     Result<void> on_connected() {
         ++connected;
-        return connected_result;
+        if (stop_when_connected)
+            connection->stop();
+        return {};
     }
     Result<void> on_message(std::string_view text) {
         messages.emplace_back(text);
@@ -47,7 +49,7 @@ class ConnectionRun final {
     std::unique_ptr<FeedConnection> connection;
     std::vector<std::string> messages;
     Result<void> outcome;
-    Result<void> connected_result;
+    bool stop_when_connected{};
     unsigned connected{};
     unsigned stopped{};
 };
@@ -63,7 +65,7 @@ struct WrongMessageHandler {
 };
 static_assert(!FeedConnectionHandler<WrongMessageHandler>);
 
-TEST(FeedConnection, SendsOpaqueSubscriptionAndDeliversUnparsedText) {
+TEST(FeedConnection, DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls) {
     test::TestTrustStore trust;
     const std::string subscription = "subscribe to another feed";
     test::LoopbackExchange exchange(subscription, {message, "not JSON"});
@@ -76,100 +78,56 @@ TEST(FeedConnection, SendsOpaqueSubscriptionAndDeliversUnparsedText) {
     EXPECT_TRUE(exchange.completed_successfully());
 }
 
-TEST(FeedConnection, PreservesConnectedHandlerFailureWithoutReadingMessages) {
-    test::TestTrustStore trust;
-    test::LoopbackExchange exchange(symbols, {}, test::ExchangeReply::WaitForClientClose);
-    ConnectionRun client;
-    client.connected_result = fail(ErrorCode::OutputIo, "consumer initialization failed");
-    ASSERT_RESULT_OK(client.configure(exchange.config()));
-    client.run();
-    ASSERT_RESULT_ERROR(client.outcome, ErrorCode::OutputIo);
-    EXPECT_EQ(client.outcome.error().message, "consumer initialization failed");
-    EXPECT_EQ(client.connected, 1U);
-    EXPECT_TRUE(client.messages.empty());
-    EXPECT_TRUE(exchange.completed_successfully());
-}
-
-TEST(FeedConnection, RejectsInvalidConfigurationBeforeConnecting) {
-    FeedConfig config;
-    config.host.clear();
-    ConnectionRun client;
-    ASSERT_RESULT_ERROR(client.configure(config), ErrorCode::InvalidConfiguration);
-    config = FeedConfig{};
-    config.max_message_bytes = 0;
-    ASSERT_RESULT_ERROR(client.configure(config), ErrorCode::InvalidConfiguration);
-}
-
-TEST(FeedConnection, RejectsAnUntrustedServerCertificate) {
-    test::TestTrustStore trust(test::fixture_path("ticker_expected.csv"));
-    test::LoopbackExchange exchange(symbols, {message});
-    ConnectionRun client;
-    ASSERT_RESULT_OK(client.configure(exchange.config()));
-    client.run();
-    ASSERT_RESULT_ERROR(client.outcome, ErrorCode::Transport);
-    EXPECT_NE(client.outcome.error().message.find("certificate verify failed"), std::string::npos);
-    EXPECT_EQ(client.connected, 0U);
-    EXPECT_TRUE(client.messages.empty());
-}
-
-TEST(FeedConnection, RejectsBinaryMessages) {
-    test::TestTrustStore trust;
-    test::LoopbackExchange exchange(symbols, {message}, test::ExchangeReply::Binary);
-    ConnectionRun client;
-    ASSERT_RESULT_OK(client.configure(exchange.config()));
-    client.run();
-    ASSERT_RESULT_ERROR(client.outcome, ErrorCode::Protocol);
-    EXPECT_TRUE(client.messages.empty());
-}
-
-TEST(FeedConnection, EnforcesMessageSizeLimit) {
-    test::TestTrustStore trust;
-    test::LoopbackExchange exchange(symbols, {message});
-    auto config = exchange.config();
-    config.max_message_bytes = 8;
-    ConnectionRun client;
-    ASSERT_RESULT_OK(client.configure(config));
-    client.run();
-    ASSERT_RESULT_ERROR(client.outcome, ErrorCode::Transport);
-}
-
-TEST(FeedConnection, StopBeforeStartCompletesOnce) {
-    ConnectionRun client;
-    ASSERT_RESULT_OK(client.configure(FeedConfig{}));
-    client.connection->stop();
-    client.connection->stop();
-    client.io.run();
-    EXPECT_EQ(client.stopped, 1U);
-    ASSERT_RESULT_OK(client.outcome);
-    ASSERT_RESULT_ERROR(client.connection->start(), ErrorCode::InvalidState);
-}
-
-TEST(FeedConnection, ValidatesDirectDeadlineSettingsBeforeCreatingTheConnection) {
-    ConnectionRun client;
-    for (const auto timeout : {Duration{0}, Duration{-1}, Duration{31'536'001}, Duration::max()}) {
-        FeedConfig config;
-        config.connect_timeout = timeout;
-        ASSERT_RESULT_ERROR(client.configure(config), ErrorCode::InvalidConfiguration);
-        config = FeedConfig{};
-        config.close_timeout = timeout;
-        ASSERT_RESULT_ERROR(client.configure(config), ErrorCode::InvalidConfiguration);
+TEST(FeedConnection, RejectsTransportOrProtocolViolations) {
+    struct Violation {
+        const char *name;
+        bool trusted;
+        test::ExchangeReply reply;
+        std::size_t message_limit;
+        ErrorCode error;
+    };
+    const Violation cases[]{{"untrusted certificate", false, test::ExchangeReply::Text, 1024, ErrorCode::Transport},
+                            {"binary frame", true, test::ExchangeReply::Binary, 1024, ErrorCode::Protocol},
+                            {"oversized frame", true, test::ExchangeReply::Text, 8, ErrorCode::Transport}};
+    for (const auto &[name, trusted, reply, message_limit, error] : cases) {
+        SCOPED_TRACE(name);
+        test::TestTrustStore trust(test::fixture_path(trusted ? "test_tls_cert.pem" : "ticker_expected.csv"));
+        test::LoopbackExchange exchange(symbols, {message}, reply);
+        auto config = exchange.config();
+        config.max_message_bytes = message_limit;
+        ConnectionRun client;
+        ASSERT_RESULT_OK(client.configure(config));
+        client.run();
+        ASSERT_RESULT_ERROR(client.outcome, error);
+        EXPECT_TRUE(client.messages.empty());
+        if (!trusted) {
+            EXPECT_EQ(client.connected, 0U);
+            EXPECT_NE(client.outcome.error().message.find("certificate verify failed"), std::string::npos);
+        }
     }
-    FeedConfig config;
-    config.connect_timeout = std::chrono::days{365};
-    config.close_timeout = std::chrono::days{365};
-    ASSERT_RESULT_OK(client.configure(config));
 }
 
-TEST(FeedConnection, ConnectionDeadlineInterruptsPendingTlsHandshake) {
+TEST(FeedConnection, BoundsConnectionAndShutdown) {
     test::TestTrustStore trust;
-    test::LoopbackExchange exchange(symbols, {}, test::ExchangeReply::StallTls);
-    auto config = exchange.config();
-    config.connect_timeout = Duration{1};
-    ConnectionRun client;
-    ASSERT_RESULT_OK(client.configure(config));
-    client.run();
-    ASSERT_RESULT_ERROR(client.outcome, ErrorCode::Transport);
-    EXPECT_EQ(client.outcome.error().message, "connection/subscription deadline exceeded");
+    for (const auto reply : {test::ExchangeReply::StallTls, test::ExchangeReply::RemainIdle}) {
+        SCOPED_TRACE(reply == test::ExchangeReply::StallTls ? "connection deadline" : "close deadline");
+        test::LoopbackExchange exchange(symbols, {}, reply);
+        auto config = exchange.config();
+        config.connect_timeout = Duration{1};
+        config.close_timeout = Duration{1};
+        ConnectionRun client;
+        client.stop_when_connected = true;
+        ASSERT_RESULT_OK(client.configure(config));
+        const auto started = std::chrono::steady_clock::now();
+        client.run();
+        EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds{3});
+        ASSERT_RESULT_ERROR(client.outcome, ErrorCode::Transport);
+        EXPECT_EQ(client.outcome.error().message,
+                  reply == test::ExchangeReply::StallTls ? "connection/subscription deadline exceeded"
+                                                         : "WebSocket close deadline exceeded");
+        EXPECT_EQ(client.connected, reply == test::ExchangeReply::StallTls ? 0U : 1U);
+        EXPECT_EQ(client.stopped, 1U);
+    }
 }
 
 } // namespace

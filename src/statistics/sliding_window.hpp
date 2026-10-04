@@ -5,6 +5,7 @@
 #include "statistics/window_options.hpp"
 #include <types.hpp>
 
+#include <chrono>
 #include <deque>
 #include <optional>
 #include <set>
@@ -23,10 +24,6 @@ namespace coinbase_ticker_statistics {
  */
 class SlidingWindow {
   public:
-    /**
-     * Construct a validated window.
-     * @return A window, or InvalidConfiguration for invalid duration.
-     */
     [[nodiscard]] static Result<SlidingWindow> create(WindowOptions options);
 
     /**
@@ -41,11 +38,9 @@ class SlidingWindow {
     /** Return the last accepted window's statistics, or nullopt before its first event. */
     [[nodiscard]] std::optional<Statistics> snapshot() const;
 
-    /** Return the number of retained observations. */
     [[nodiscard]] SampleCount size() const noexcept;
 
   private:
-    /** The factory establishes all option invariants before invoking this constructor. */
     explicit SlidingWindow(WindowOptions options);
 
     struct WindowSample {

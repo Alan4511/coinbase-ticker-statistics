@@ -45,7 +45,7 @@ ctest --test-dir build --output-on-failure
 
 Tests cover window calculations, parsing, CSV output and local TLS/WebSocket
 integration, including shutdown. They require loopback access but no external feed.
-See [verification details](docs/DESIGN_DECISIONS.md#verification-scope) for fixtures,
+See [verification details](docs/DESIGN_DECISIONS.md#verification-approach) for fixtures,
 independent CSV checks and the scope of the recorded results.
 
 ## Documentation

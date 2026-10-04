@@ -5,6 +5,7 @@
 #include <statistics/statistics_processor.hpp>
 
 #include <cstddef>
+#include <expected>
 #include <utility>
 
 namespace coinbase_ticker_statistics {

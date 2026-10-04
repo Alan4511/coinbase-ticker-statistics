@@ -2,6 +2,7 @@
 
 #include "result.hpp"
 
+#include <expected>
 #include <functional>
 #include <string>
 #include <string_view>

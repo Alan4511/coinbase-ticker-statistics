@@ -3,6 +3,8 @@
 #include <result.hpp>
 #include <types.hpp>
 
+#include <chrono>
+
 namespace coinbase_ticker_statistics {
 
 /** Runtime window rules, independent of configuration syntax and networking. */

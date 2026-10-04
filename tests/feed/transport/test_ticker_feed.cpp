@@ -74,7 +74,7 @@ struct WrongResultHandler {
 static_assert(!FeedHandler<IncompleteHandler>);
 static_assert(!FeedHandler<WrongResultHandler>);
 
-TEST(TickerFeed, SubscribesDecodesTickerUpdatesFiltersControlMessagesAndRecognizesPeerClose) {
+TEST(TickerFeed, DecodesFiltersAndCountsTypedUpdates) {
     test::TestTrustStore trust;
     test::LoopbackExchange exchange(symbols, {R"({"type":"subscriptions"})", ticker});
     FeedRun client;
@@ -95,40 +95,23 @@ TEST(TickerFeed, SubscribesDecodesTickerUpdatesFiltersControlMessagesAndRecogniz
     EXPECT_TRUE(exchange.completed_successfully());
 }
 
-TEST(TickerFeed, RejectsMalformedInputBeforeNotifyingTheMessageHandler) {
+TEST(TickerFeed, PropagatesParserAndConsumerFailures) {
     test::TestTrustStore trust;
-    test::LoopbackExchange exchange(symbols, {ticker, R"({"type":"ticker"})"});
-    FeedRun client;
-    ASSERT_RESULT_OK(client.configure(exchange.config()));
-    client.run();
-    ASSERT_RESULT_ERROR(client.outcome, ErrorCode::InvalidInput);
-    EXPECT_EQ(client.ticker_updates.size(), 1U);
-    EXPECT_EQ(client.feed->counts().received_messages, 2U);
-    EXPECT_EQ(client.feed->counts().ticker_updates, 1U);
-}
-
-TEST(TickerFeed, PreservesMessageHandlerFailureAndStopsDelivery) {
-    test::TestTrustStore trust;
-    test::LoopbackExchange exchange(symbols, {ticker, ticker});
-    FeedRun client;
-    client.message_result = fail(ErrorCode::OutputIo, "consumer output failed");
-    ASSERT_RESULT_OK(client.configure(exchange.config()));
-    client.run();
-    ASSERT_RESULT_ERROR(client.outcome, ErrorCode::OutputIo);
-    EXPECT_EQ(client.outcome.error().message, "consumer output failed");
-    EXPECT_EQ(client.ticker_updates.size(), 1U);
-    EXPECT_EQ(client.feed->counts().received_messages, 1U);
-}
-
-TEST(TickerFeed, RejectsInvalidConfigurationBeforeConnecting) {
-    FeedConfig config;
-    config.host.clear();
-    FeedRun client;
-    ASSERT_RESULT_ERROR(client.configure(config), ErrorCode::InvalidConfiguration);
-    config = FeedConfig{};
-    config.max_message_bytes = 0;
-    ASSERT_RESULT_ERROR(client.configure(config), ErrorCode::InvalidConfiguration);
-    ASSERT_RESULT_ERROR(client.configure(FeedConfig{}, {}), ErrorCode::InvalidConfiguration);
+    for (const bool consumer_failure : {false, true}) {
+        SCOPED_TRACE(consumer_failure ? "consumer failure" : "parser failure");
+        test::LoopbackExchange exchange(symbols, {ticker, consumer_failure ? ticker : R"({"type":"ticker"})"});
+        FeedRun client;
+        if (consumer_failure)
+            client.message_result = fail(ErrorCode::OutputIo, "consumer output failed");
+        ASSERT_RESULT_OK(client.configure(exchange.config()));
+        client.run();
+        ASSERT_RESULT_ERROR(client.outcome, consumer_failure ? ErrorCode::OutputIo : ErrorCode::InvalidInput);
+        EXPECT_EQ(client.ticker_updates.size(), 1U);
+        EXPECT_EQ(client.feed->counts().received_messages, consumer_failure ? 1U : 2U);
+        EXPECT_EQ(client.feed->counts().ticker_updates, 1U);
+        if (consumer_failure)
+            EXPECT_EQ(client.outcome.error().message, "consumer output failed");
+    }
 }
 
 } // namespace

@@ -59,7 +59,7 @@ All accepted samples remain until expiration. There is no sample-count cap;
 memory depends on arrival rate and window duration. The old
 `max_observations_per_symbol` key has no effect. Mean weights each ticker equally,
 not by volume or elapsed time. Prices/statistics use `long double`, with no
-scale or rounding settings; see the [numeric tradeoff](DESIGN_DECISIONS.md#numeric-model-and-tradeoffs).
+scale or rounding settings; see the [numeric tradeoff](DESIGN_DECISIONS.md#numeric-model).
 
 ## Output
 

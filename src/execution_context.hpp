@@ -2,6 +2,9 @@
 
 #include "run_control.hpp"
 
+#include <string_view>
+#include <utility>
+
 namespace coinbase_ticker_statistics {
 
 /** Borrow application run control, without exposing feed, sink or other services.

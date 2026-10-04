@@ -49,9 +49,7 @@ Result<TradeId> read_trade_id(const Json &document) {
 } // namespace
 
 Result<std::optional<TickerUpdate>> parse_ticker_message(std::string_view message) {
-    // A readable DOM decoder costs allocations and throughput versus SAX/simdjson. Keeping it
-    // behind this boundary lets the assignment favor auditability and replace it after profiling.
-    // Discarded JSON is a normal validation result; malformed network data never uses exceptions.
+    // Malformed network data returns a validation error rather than throwing from JSON parsing.
     const auto document = Json::parse(message, nullptr, false);
     if (document.is_discarded()) {
         return fail(ErrorCode::InvalidInput, "invalid feed JSON");

@@ -8,7 +8,7 @@ namespace coinbase_ticker_statistics {
 namespace {
 using Json = nlohmann::json;
 
-TEST(Subscription, BuildsPublicMultiSymbolTickerSubscription) {
+TEST(Subscription, BuildsAndValidatesMultiSymbolSubscription) {
     ASSERT_RESULT_VALUE(subscription, encode_ticker_subscription({"BTC-USD", "ETH-USD", "SOL-USD"}));
     const auto document = Json::parse(subscription);
     EXPECT_EQ(document.size(), 3U);
@@ -18,12 +18,10 @@ TEST(Subscription, BuildsPublicMultiSymbolTickerSubscription) {
     EXPECT_FALSE(document.contains("api_key"));
     EXPECT_FALSE(document.contains("signature"));
     ASSERT_RESULT_ERROR(encode_ticker_subscription({}), ErrorCode::InvalidConfiguration);
-}
-
-TEST(Subscription, ValidatesProductIdsWithoutSerialization) {
     ASSERT_RESULT_OK(validate_product_ids({"BTC-USD", "ETH-USD"}));
     ASSERT_RESULT_ERROR(validate_product_ids({}), ErrorCode::InvalidConfiguration);
     for (const auto *symbol : {"", "BTC", "-BTC-USD", "BTC-USD-", "BTC--USD", "btc-usd", "BTC/USD", "BTC USD"}) {
+        SCOPED_TRACE(symbol);
         ASSERT_RESULT_ERROR(validate_product_ids({symbol}), ErrorCode::InvalidConfiguration);
         ASSERT_RESULT_ERROR(encode_ticker_subscription({symbol}), ErrorCode::InvalidConfiguration);
     }

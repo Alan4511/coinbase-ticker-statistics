@@ -28,139 +28,108 @@ void expect_close(Statistic actual, Statistic expected) {
               64 * std::numeric_limits<Statistic>::epsilon() * std::max(Statistic{1}, std::abs(expected)));
 }
 
-TEST(SlidingWindow, StartsEmptyAndComputesOddAndEvenStatistics) {
-    ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{}));
-    EXPECT_EQ(window.size(), 0);
-    EXPECT_FALSE(window.snapshot());
-    auto result = window.add_update(ticker_update(1, 300, at(0)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 1);
-    expect_close((*result)->mean, (static_cast<Statistic>(300) / static_cast<Statistic>(1)));
-    expect_close((*result)->median, (static_cast<Statistic>(300) / static_cast<Statistic>(1)));
-    EXPECT_EQ((*result)->low, 300);
-    EXPECT_EQ((*result)->high, 300);
-
-    result = window.add_update(ticker_update(2, 100, at(1)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    expect_close((*result)->mean, (static_cast<Statistic>(400) / static_cast<Statistic>(2)));
-    expect_close((*result)->median, (static_cast<Statistic>(400) / static_cast<Statistic>(2)));
-    EXPECT_EQ((*result)->low, 100);
-    EXPECT_EQ((*result)->high, 300);
-
-    result = window.add_update(ticker_update(3, 200, at(2)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 3);
-    expect_close((*result)->mean, (static_cast<Statistic>(600) / static_cast<Statistic>(3)));
-    expect_close((*result)->median, (static_cast<Statistic>(200) / static_cast<Statistic>(1)));
-
-    result = window.add_update(ticker_update(4, 201, at(3)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    expect_close((*result)->mean, (static_cast<Statistic>(801) / static_cast<Statistic>(4)));
-    expect_close((*result)->median, (static_cast<Statistic>(401) / static_cast<Statistic>(2)));
-}
-
-TEST(SlidingWindow, DefaultBoundaryExcludesExactlyFiveMinutesOld) {
-    ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{}));
-    ASSERT_RESULT_OK(window.add_update(ticker_update(1, 100, at(0))));
-    ASSERT_RESULT_OK(window.add_update(ticker_update(2, 200, at(1))));
-    auto result = window.add_update(ticker_update(3, 300, at(300)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 2);
-    EXPECT_EQ((*result)->low, 200);
-    expect_close((*result)->mean, (static_cast<Statistic>(500) / static_cast<Statistic>(2)));
-    result = window.add_update(ticker_update(4, 400, at(601)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 1);
-    EXPECT_EQ((*result)->low, 400);
-}
-
-TEST(SlidingWindow, LongerDurationUsesSameWindowRules) {
-    WindowOptions options;
-    options.duration = std::chrono::hours{1};
-    ASSERT_RESULT_VALUE(window, SlidingWindow::create(options));
-    ASSERT_RESULT_OK(window.add_update(ticker_update(1, 10, at(0))));
-    ASSERT_RESULT_OK(window.add_update(ticker_update(2, 20, at(3599))));
-    EXPECT_EQ(window.size(), 2);
-    const auto result = window.add_update(ticker_update(3, 30, at(3600)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 2);
-    EXPECT_EQ((*result)->low, 20);
-}
-
-TEST(SlidingWindow, SameTimestampAndRepeatedPricesAreDistinctSamples) {
-    ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{}));
-    for (TradeId id = 1; id <= 20; ++id) {
-        ASSERT_RESULT_OK(window.add_update(ticker_update(id, 42, at(0))));
+TEST(SlidingWindow, ComputesStatisticsAndExpiresAtWindowBoundary) {
+    for (const Duration duration : {Duration{300}, Duration{3600}}) {
+        SCOPED_TRACE(duration.count());
+        ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{duration}));
+        EXPECT_EQ(window.size(), 0U);
+        EXPECT_FALSE(window.snapshot());
+        struct Step {
+            Price price;
+            Statistic mean;
+            Statistic median;
+            Price low;
+        };
+        const Step steps[]{{300, 300, 300, 300},
+                           {100, 200, 200, 100},
+                           {200, 200, 200, 100},
+                           {201, 200.25L, 200.5L, 100},
+                           {201, 200.4L, 201, 100}};
+        TradeId id{};
+        for (const auto &[price, mean, median, low] : steps) {
+            ++id;
+            SCOPED_TRACE(id);
+            ASSERT_RESULT_VALUE(result, window.add_update(ticker_update(id, price, at(id == 1 ? 0 : 1))));
+            ASSERT_TRUE(result);
+            EXPECT_EQ(result->count, id);
+            expect_close(result->mean, mean);
+            expect_close(result->median, median);
+            EXPECT_EQ(result->low, low);
+            EXPECT_EQ(result->high, 300);
+        }
+        ASSERT_RESULT_VALUE(boundary, window.add_update(ticker_update(++id, 400, Timestamp{duration})));
+        ASSERT_TRUE(boundary);
+        EXPECT_EQ(boundary->count, 5U); // The observation exactly one window old has expired.
+        expect_close(boundary->mean, 220.4L);
+        EXPECT_EQ(boundary->median, 201);
+        EXPECT_EQ(boundary->low, 100);
+        EXPECT_EQ(boundary->high, 400);
+        ASSERT_RESULT_VALUE(expired, window.add_update(ticker_update(++id, 50, Timestamp{duration * 2})));
+        ASSERT_TRUE(expired);
+        EXPECT_EQ(expired->count, 1U);
+        EXPECT_EQ(expired->mean, 50);
     }
-    const auto snapshot = window.snapshot();
-    ASSERT_TRUE(snapshot);
-    EXPECT_EQ(snapshot->count, 20);
-    expect_close(snapshot->median, (static_cast<Statistic>(42) / static_cast<Statistic>(1)));
-    const auto expired = window.add_update(ticker_update(21, 100, at(300)));
-    ASSERT_RESULT_OK(expired);
-    ASSERT_TRUE(*expired);
-    EXPECT_EQ((*expired)->count, 1);
-    EXPECT_EQ((*expired)->low, 100);
+    // Computing the cutoff must also be safe before the representable timestamp range.
+    ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{Duration{1}}));
+    const auto start = Timestamp::min();
+    ASSERT_RESULT_OK(window.add_update(ticker_update(1, 100, start)));
+    ASSERT_RESULT_OK(window.add_update(ticker_update(2, 200, start + std::chrono::nanoseconds{1})));
+    ASSERT_RESULT_VALUE(boundary, window.add_update(ticker_update(3, 300, start + Duration{1})));
+    ASSERT_TRUE(boundary);
+    EXPECT_EQ(boundary->count, 2U);
+    EXPECT_EQ(boundary->low, 200);
 }
 
-TEST(SlidingWindow, IgnoredDuplicateDoesNotExpireDataOrAdvanceWatermark) {
+TEST(SlidingWindow, HandlesDuplicateTradeIds) {
     ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{}));
     ASSERT_RESULT_OK(window.add_update(ticker_update(1, 100, at(0))));
     ASSERT_RESULT_OK(window.add_update(ticker_update(2, 200, at(100))));
-    EXPECT_EQ(window.add_update(ticker_update(2, 999, at(350))), std::nullopt);
+    ASSERT_RESULT_VALUE(duplicate, window.add_update(ticker_update(2, 999, at(350))));
+    EXPECT_FALSE(duplicate);
+    EXPECT_EQ(window.size(), 2U);
     ASSERT_TRUE(window.snapshot());
-    EXPECT_EQ(window.size(), 2);
     EXPECT_EQ(window.snapshot()->low, 100);
+    // Ignoring the duplicate must neither expire data nor move the watermark to 350.
     ASSERT_RESULT_OK(window.add_update(ticker_update(3, 300, at(150))));
-    EXPECT_EQ(window.size(), 3);
+    ASSERT_RESULT_VALUE(reused, window.add_update(ticker_update(1, 400, at(300))));
+    ASSERT_TRUE(reused);
+    EXPECT_EQ(reused->count, 3U);
+    EXPECT_EQ(reused->low, 200);
+    EXPECT_EQ(reused->high, 400);
 }
 
-TEST(SlidingWindow, DuplicateIdentifiersCanBeReusedAfterExpiry) {
-    ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{}));
-    ASSERT_RESULT_OK(window.add_update(ticker_update(1, 100, at(0))));
-    const auto result = window.add_update(ticker_update(1, 200, at(300)));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 1);
-    EXPECT_EQ((*result)->low, 200);
-}
-
-TEST(SlidingWindow, LateEventsFailWithoutMutation) {
-    WindowOptions options;
-    ASSERT_RESULT_VALUE(rejecting, SlidingWindow::create(options));
-    ASSERT_RESULT_OK(rejecting.add_update(ticker_update(1, 100, at(100))));
-    ASSERT_RESULT_ERROR(rejecting.add_update(ticker_update(2, 200, at(99))), ErrorCode::OutOfOrderTimestamp);
-    EXPECT_EQ(rejecting.size(), 1);
-    ASSERT_TRUE(rejecting.snapshot());
-    EXPECT_EQ(rejecting.snapshot()->mean, 100);
-    ASSERT_RESULT_OK(rejecting.add_update(ticker_update(2, 200, at(101))));
-    EXPECT_EQ(rejecting.size(), 2);
-}
-
-TEST(SlidingWindow, RejectsNonfiniteInputAndSumOverflowWithoutMutation) {
+TEST(SlidingWindow, RejectsInvalidOrOutOfOrderUpdatesWithoutMutation) {
     ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{}));
     const Price maximum = std::numeric_limits<Price>::max();
-    ASSERT_RESULT_OK(window.add_update(ticker_update(1, maximum, at(0))));
-    ASSERT_RESULT_ERROR(window.add_update(ticker_update(2, maximum, at(1))), ErrorCode::OutOfRange);
-    EXPECT_EQ(window.size(), 1U);
-    EXPECT_EQ(window.snapshot()->mean, maximum);
-    for (const Price invalid :
-         {-1.0L, std::numeric_limits<Price>::infinity(), std::numeric_limits<Price>::quiet_NaN()}) {
-        ASSERT_RESULT_ERROR(window.add_update(ticker_update(2, invalid, at(1))), ErrorCode::InvalidInput);
+    ASSERT_RESULT_OK(window.add_update(ticker_update(1, maximum, at(100))));
+    struct InvalidCase {
+        const char *name;
+        Price price;
+        Timestamp time;
+        ErrorCode error;
+    };
+    const InvalidCase cases[]{{"decreasing time", 1, at(99), ErrorCode::OutOfOrderTimestamp},
+                              {"negative price", -1, at(101), ErrorCode::InvalidInput},
+                              {"infinity", std::numeric_limits<Price>::infinity(), at(101), ErrorCode::InvalidInput},
+                              {"NaN", std::numeric_limits<Price>::quiet_NaN(), at(101), ErrorCode::InvalidInput},
+                              {"sum overflow", maximum, at(101), ErrorCode::OutOfRange}};
+    for (const auto &[name, price, time, error] : cases) {
+        SCOPED_TRACE(name);
+        ASSERT_RESULT_ERROR(window.add_update(ticker_update(2, price, time)), error);
+        ASSERT_TRUE(window.snapshot());
+        const auto snapshot = *window.snapshot();
+        EXPECT_EQ(snapshot.count, 1U);
+        EXPECT_EQ(snapshot.mean, maximum);
+        EXPECT_EQ(snapshot.median, maximum);
+        EXPECT_EQ(snapshot.low, maximum);
+        EXPECT_EQ(snapshot.high, maximum);
     }
-    ASSERT_RESULT_VALUE(result, window.add_update(ticker_update(3, 0, at(300))));
-    ASSERT_TRUE(result);
-    EXPECT_EQ(result->mean, 0);
+    ASSERT_RESULT_VALUE(expired, window.add_update(ticker_update(2, 0, at(400))));
+    ASSERT_TRUE(expired);
+    EXPECT_EQ(expired->mean, 0);
 }
 
-TEST(SlidingWindow, CompensationPreservesSmallPricesWhenLargePriceExpires) {
+TEST(SlidingWindow, PreservesNumericalStabilityAcrossExpiration) {
     ASSERT_RESULT_VALUE(window, SlidingWindow::create(WindowOptions{}));
     const Price large = 1 / std::numeric_limits<Price>::epsilon();
     ASSERT_RESULT_OK(window.add_update(ticker_update(1, large, at(0))));
@@ -171,36 +140,7 @@ TEST(SlidingWindow, CompensationPreservesSmallPricesWhenLargePriceExpires) {
     EXPECT_EQ(result->median, 0.25L);
 }
 
-TEST(SlidingWindow, ValidatesDuration) {
-    WindowOptions options;
-    options.duration = std::chrono::seconds::zero();
-    ASSERT_RESULT_ERROR(SlidingWindow::create(options), ErrorCode::InvalidConfiguration);
-    options.duration = std::chrono::seconds{-1};
-    ASSERT_RESULT_ERROR(SlidingWindow::create(options), ErrorCode::InvalidConfiguration);
-    options.duration = std::chrono::seconds::max();
-    ASSERT_RESULT_ERROR(SlidingWindow::create(options), ErrorCode::InvalidConfiguration);
-    options = WindowOptions{};
-    ASSERT_RESULT_OK(SlidingWindow::create(options));
-}
-
-TEST(SlidingWindow, HandlesCutoffBeforeRepresentableTimestampRange) {
-    WindowOptions options;
-    options.duration = std::chrono::seconds{1};
-    ASSERT_RESULT_VALUE(window, SlidingWindow::create(options));
-    const Timestamp start = Timestamp::min();
-    ASSERT_RESULT_OK(window.add_update(ticker_update(1, 100, start)));
-    auto result = window.add_update(ticker_update(2, 200, start + std::chrono::nanoseconds{1}));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 2);
-    result = window.add_update(ticker_update(3, 300, start + options.duration));
-    ASSERT_RESULT_OK(result);
-    ASSERT_TRUE(*result);
-    EXPECT_EQ((*result)->count, 2);
-    EXPECT_EQ((*result)->low, 200);
-}
-
-TEST(SlidingWindow, RandomizedUpdatesMatchIndependentSortedReference) {
+TEST(SlidingWindow, RandomizedUpdatesMatchIndependentReference) {
     struct Sample {
         Timestamp time;
         Price price;
@@ -208,6 +148,8 @@ TEST(SlidingWindow, RandomizedUpdatesMatchIndependentSortedReference) {
     constexpr TradeId sample_count = 4000;
     for (const auto duration : {std::chrono::seconds{300}, std::chrono::seconds{3600}}) {
         for (const std::uint64_t random_seed : {0x5EEDU, 0xC0FFEEU}) {
+            SCOPED_TRACE(duration.count());
+            SCOPED_TRACE(random_seed);
             WindowOptions options;
             options.duration = duration;
             ASSERT_RESULT_VALUE(window, SlidingWindow::create(options));

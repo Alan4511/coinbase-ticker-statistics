@@ -35,7 +35,6 @@ class CsvWriter final {
     [[nodiscard]] Result<void> flush();
 
   private:
-    /** Escape a field when its content contains a delimiter, quote, or line ending. */
     void append_field(std::string &row, std::string_view field) const;
     /** Write already formatted text independently of the stream's locale or format flags. */
     [[nodiscard]] Result<void> write_text(std::string_view text);

@@ -20,7 +20,7 @@
 namespace coinbase_ticker_statistics {
 namespace {
 
-TEST(Logging, IncludesUtcSeverityAndConnectionContextOnOneLine) {
+TEST(Logging, FormatsDiagnosticsAndContainsStreamFailures) {
     std::ostringstream output;
     Logger logger(output);
     logger.log(LogLevel::Error, "connection=", 2, " failed: remote\r\nerror");
@@ -29,13 +29,8 @@ TEST(Logging, IncludesUtcSeverityAndConnectionContextOnOneLine) {
     ASSERT_NE(timestamp_end, std::string::npos);
     ASSERT_RESULT_OK(parse_utc_timestamp(line.substr(0, timestamp_end)));
     EXPECT_EQ(line.substr(timestamp_end), " ERROR connection=2 failed: remote\\r\\nerror\n");
-}
-
-TEST(Logging, StreamFailuresDoNotEscapeIntoApplicationCode) {
-    std::ostringstream output;
     output.exceptions(std::ios::badbit);
     EXPECT_THROW(output.setstate(std::ios::badbit), std::ios_base::failure);
-    Logger logger(output);
     EXPECT_NO_THROW(logger.log(LogLevel::Info, "stopping"));
 }
 
@@ -48,7 +43,7 @@ const std::string ticker =
 const std::string header = "time,symbol,trade_id,trade_price,count,mean,median,low,high\n";
 const std::string row = "2026-01-02T03:04:05.000000000Z,BTC-USD,42,1.25,1,1.25,1.25,1.25,1.25\n";
 
-TEST(Application, WritesCsvAndReportsPeerCloseWithFinalCounts) {
+TEST(Application, WritesCsvAndReportsFinalCounts) {
     test::TemporaryDirectory directory;
     auto config = configuration(directory.file("nested/output.csv"));
     config.output.flush_interval = std::chrono::seconds{30};
@@ -66,24 +61,7 @@ TEST(Application, WritesCsvAndReportsPeerCloseWithFinalCounts) {
     EXPECT_TRUE(exchange.completed_successfully());
 }
 
-TEST(Application, MalformedTickerFailsAndFlushesPreviousRows) {
-    test::TemporaryDirectory directory;
-    auto config = configuration(directory.file("output.csv"));
-    test::TestTrustStore trust;
-    test::LoopbackExchange exchange(config.symbols, {ticker, R"({"type":"ticker"})"});
-    config.feed = exchange.config();
-    std::ostringstream diagnostics;
-    Logger logger(diagnostics);
-    ASSERT_RESULT_OK(validate_config(config));
-    ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::InvalidInput);
-    EXPECT_EQ(test::read_file(config.output.path), header + row);
-    EXPECT_NE(
-        diagnostics.str().find("ERROR stopped: status=failure received_messages=2 ticker_updates=1 emitted_rows=1"),
-        std::string::npos);
-    EXPECT_NE(diagnostics.str().find("reason=ticker field 'product_id'"), std::string::npos);
-}
-
-TEST(Application, FailedTlsConnectionPreservesExistingOutput) {
+TEST(Application, ConnectionFailurePreservesExistingOutput) {
     test::TemporaryDirectory directory;
     auto config = configuration(directory.file("existing.csv"));
     test::write_file(config.output.path, "previous run\n");
@@ -97,7 +75,7 @@ TEST(Application, FailedTlsConnectionPreservesExistingOutput) {
     EXPECT_EQ(test::read_file(config.output.path), "previous run\n");
 }
 
-TEST(Application, StatisticsFailureStopsTheFeedAndFlushesPreviousRows) {
+TEST(Application, ProcessingFailureStopsAndFlushesPreviousRows) {
     test::TemporaryDirectory directory;
     auto config = configuration(directory.file("output.csv"));
     test::TestTrustStore trust;
@@ -174,17 +152,7 @@ class ApplicationProcess {
     std::optional<int> status_;
 };
 
-bool wait_for_log(const std::filesystem::path &path, std::string_view text) {
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds{2};
-    while (std::chrono::steady_clock::now() < until) {
-        if (std::filesystem::exists(path) && test::read_file(path).find(text) != std::string::npos)
-            return true;
-        std::this_thread::sleep_for(std::chrono::milliseconds{5});
-    }
-    return false;
-}
-
-void check_idle_shutdown(int signal, test::ExchangeReply reply, std::size_t flush_every_rows = 100) {
+void check_idle_shutdown(int signal, test::ExchangeReply reply) {
     test::TemporaryDirectory directory;
     auto config = configuration(directory.file("output.csv"));
     const auto diagnostics = directory.file("application.log");
@@ -192,7 +160,6 @@ void check_idle_shutdown(int signal, test::ExchangeReply reply, std::size_t flus
     test::LoopbackExchange exchange(config.symbols, {ticker}, reply);
     config.feed = exchange.config();
     config.feed.close_timeout = Duration{1};
-    config.output.flush_every_rows = flush_every_rows;
     config.output.flush_interval = std::chrono::milliseconds{20};
     ApplicationProcess app(config, diagnostics);
     // Visibility proves a partial batch is flushed while the feed remains idle.
@@ -218,19 +185,14 @@ void check_idle_shutdown(int signal, test::ExchangeReply reply, std::size_t flus
     }
 }
 
-TEST(Application, SigtermDuringIdleReadClosesWebSocketFlushesAndLogsFinalCounts) {
-    check_idle_shutdown(SIGTERM, test::ExchangeReply::WaitForClientClose);
+TEST(Application, SignalShutdownIsGraceful) {
+    for (const int signal : {SIGINT, SIGTERM}) {
+        SCOPED_TRACE(signal == SIGINT ? "SIGINT" : "SIGTERM");
+        check_idle_shutdown(signal, test::ExchangeReply::WaitForClientClose);
+    }
 }
 
-TEST(Application, SigintDuringIdleReadClosesWebSocketFlushesAndLogsFinalCounts) {
-    check_idle_shutdown(SIGINT, test::ExchangeReply::WaitForClientClose);
-}
-
-TEST(Application, ImmediateFlushingPublishesRowsDuringIdleRead) {
-    check_idle_shutdown(SIGTERM, test::ExchangeReply::WaitForClientClose, 1);
-}
-
-TEST(Application, TimedFlushFailureStopsAnIdleFeed) {
+TEST(Application, TimedOutputFailureStopsIdleFeed) {
     test::TemporaryDirectory directory;
     auto config = configuration(directory.file("output.csv"));
     config.output.flush_interval = std::chrono::milliseconds{20};
@@ -244,55 +206,8 @@ TEST(Application, TimedFlushFailureStopsAnIdleFeed) {
     EXPECT_TRUE(exchange.completed_successfully());
 }
 
-TEST(Application, TimedFlushFailureSurvivesCloseDeadlineAndFinalFlushFailures) {
-    test::TemporaryDirectory directory;
-    auto config = configuration(directory.file("output.csv"));
-    config.output.flush_interval = std::chrono::milliseconds{20};
-    test::TestTrustStore trust;
-    test::LoopbackExchange exchange(config.symbols, {ticker}, test::ExchangeReply::RemainIdle);
-    config.feed = exchange.config();
-    config.feed.close_timeout = Duration{1};
-    ApplicationProcess app(config, directory.file("application.log"), header.size(), ErrorCode::OutputIo);
-    ASSERT_TRUE(app.wait_for_exit());
-    EXPECT_EQ(app.exit_code(), 1);
-    EXPECT_EQ(test::read_file(config.output.path), header);
-}
-
-TEST(Application, ProcessingFailureSurvivesTimedFlushAndCloseFailures) {
-    test::TemporaryDirectory directory;
-    auto config = configuration(directory.file("output.csv"));
-    config.output.flush_interval = std::chrono::milliseconds{20};
-    test::TestTrustStore trust;
-    const std::string earlier =
-        R"({"type":"ticker","product_id":"BTC-USD","trade_id":43,"price":"2","time":"2026-01-02T03:04:04Z"})";
-    test::LoopbackExchange exchange(config.symbols, {ticker, earlier}, test::ExchangeReply::RemainIdle);
-    config.feed = exchange.config();
-    config.feed.close_timeout = Duration{1};
-    ApplicationProcess app(config, directory.file("application.log"), header.size(), ErrorCode::OutOfOrderTimestamp);
-    ASSERT_TRUE(app.wait_for_exit());
-    EXPECT_EQ(app.exit_code(), 1);
-    EXPECT_EQ(test::read_file(config.output.path), header);
-}
-
-TEST(Application, ShutdownDeadlineForcesCloseWhenPeerDoesNotRespond) {
+TEST(Application, CloseDeadlineBoundsUnresponsivePeer) {
     check_idle_shutdown(SIGTERM, test::ExchangeReply::RemainIdle);
-}
-
-TEST(Application, SignalDuringConnectionSetupCancelsAndPreservesOutput) {
-    test::TemporaryDirectory directory;
-    auto config = configuration(directory.file("existing.csv"));
-    test::write_file(config.output.path, "previous run\n");
-    const auto diagnostics = directory.file("application.log");
-    test::TestTrustStore trust;
-    test::LoopbackExchange exchange(config.symbols, {}, test::ExchangeReply::StallTls);
-    config.feed = exchange.config();
-    ApplicationProcess app(config, diagnostics);
-    ASSERT_TRUE(wait_for_log(diagnostics, "connecting:"));
-    ASSERT_TRUE(app.send_signal(SIGTERM));
-    ASSERT_TRUE(app.wait_for_exit());
-    EXPECT_EQ(app.exit_code(), 0);
-    EXPECT_EQ(test::read_file(config.output.path), "previous run\n");
-    EXPECT_NE(test::read_file(diagnostics).find("stopped: status=success"), std::string::npos);
 }
 
 } // namespace

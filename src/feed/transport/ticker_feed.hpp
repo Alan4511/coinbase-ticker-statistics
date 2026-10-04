@@ -10,6 +10,7 @@
 #include <boost/asio/io_context.hpp>
 
 #include <cstddef>
+#include <expected>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -36,7 +37,7 @@ class TickerFeed {
         auto subscription = encode_ticker_subscription(symbols);
         if (!subscription)
             return std::unexpected(std::move(subscription.error()));
-        // The connection borrows this stable object, rather than a separate callback adapter.
+        // The connection borrows this object's stable address.
         auto feed = std::unique_ptr<TickerFeed>(new TickerFeed(handler, context));
         auto connection = FeedConnection::create(io, std::move(config), std::move(*subscription), *feed);
         if (!connection)

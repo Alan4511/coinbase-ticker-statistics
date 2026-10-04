@@ -8,6 +8,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/steady_timer.hpp>
 
+#include <cstddef>
 #include <fstream>
 
 namespace coinbase_ticker_statistics {

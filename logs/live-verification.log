@@ -1,23 +1,22 @@
-Live Coinbase ticker capture and independent verification — batch flushing
-Started UTC: 2026-10-04T04:53:41.884352+00:00
-Command: ./build/bin/coinbase_ticker_statistics_app --config config/live_verification.json
+Public Coinbase ticker capture and independent verification
+Started UTC: 2026-10-04T15:14:23.587005+00:00
+Command: ./build/submission-release/bin/coinbase_ticker_statistics_app --config config/live_verification.json
 Symbols: BTC-USD, ETH-USD, SOL-USD; window: 300 seconds
-Flushing: every 100 rows or 250 ms from the first pending row
-Capture duration: 30 seconds; CSV: build/live.csv
-Application diagnostics: logs/live-run.log
+Flushing: 100 rows or 250 ms from the first pending row
+Trust: system CA bundle via SSL_CERT_FILE=/etc/ssl/cert.pem
+Capture duration: 30 seconds after CSV readiness; output: build/live.csv
+Application diagnostics: logs/live-run.log (workspace prefix omitted from paths)
 
-Capture midpoint: 40 complete data rows visible while the application was running.
-Capture complete; harness sent SIGTERM to request graceful shutdown.
+Midpoint: 98 complete data rows visible while running.
+Harness sent SIGTERM; application completed graceful shutdown.
 Application return code: 0
-Finished UTC: 2026-10-04T04:54:12.330229+00:00
+Finished UTC: 2026-10-04T15:14:57.725186+00:00
 
-Shutdown result: close/cleanup and final CSV flush completed; exit status zero.
-
-Independent CSV verification (1e-12 relative / 1e-15 absolute tolerance):
+Independent Decimal verification (relative tolerance 1e-12; absolute tolerance 1e-15):
 Command: python3 tools/verify_csv.py --config config/live_verification.json
-PASS live.csv: 96 rows independently verified
-  BTC-USD: observations=42 expired=0 observed_span_seconds=26.773576
-  ETH-USD: observations=33 expired=0 observed_span_seconds=27.36581
-  SOL-USD: observations=21 expired=0 observed_span_seconds=27.180349
+PASS live.csv: 169 rows independently verified
+  BTC-USD: observations=131 expired=0 observed_span_seconds=28.351543
+  ETH-USD: observations=26 expired=0 observed_span_seconds=20.267617
+  SOL-USD: observations=12 expired=0 observed_span_seconds=32.861848
 
-Scope: the short capture does not prove five-minute expiration; deterministic tests cover expiration.
+Scope: this short capture does not prove five-minute expiration; deterministic tests cover expiration.

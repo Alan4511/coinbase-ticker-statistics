@@ -28,8 +28,6 @@ Result<std::string> format_utc_timestamp(Timestamp timestamp) {
     const std::chrono::hh_mm_ss time{timestamp - days};
     constexpr int year_width = 4;
     constexpr int component_width = 2;
-    // Stream formatting favors readable, deterministic CSV over a hand-written
-    // digit buffer; its formatting/allocation cost belongs to the output stage.
     std::ostringstream output;
     output.imbue(std::locale::classic());
     output << std::setfill('0') << std::setw(year_width) << year << '-' << std::setw(component_width)

@@ -17,7 +17,7 @@
 namespace coinbase_ticker_statistics {
 namespace {
 
-TEST(Pipeline, JsonThroughRoutingAndWindowsMatchesIndependentCsvFixture) {
+TEST(Pipeline, FixtureMatchesIndependentExpectedCsv) {
     const std::filesystem::path fixture_directory =
         std::filesystem::path{COINBASE_TICKER_STATISTICS_SOURCE_DIR} / "data";
     std::ifstream input(fixture_directory / "ticker_fixture.jsonl");

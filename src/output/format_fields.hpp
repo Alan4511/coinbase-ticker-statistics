@@ -9,6 +9,7 @@
 #include <concepts>
 #include <limits>
 #include <string>
+#include <system_error>
 
 namespace coinbase_ticker_statistics {
 /** Append a nonnegative numeric CSV field without a temporary string or locale conversion. */

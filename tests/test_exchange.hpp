@@ -13,9 +13,11 @@
 
 #include <csignal>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
