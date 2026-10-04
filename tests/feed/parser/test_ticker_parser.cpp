@@ -1,6 +1,6 @@
-#include "feed/parser/parse_fields.hpp"
-#include "feed/parser/ticker_parser.hpp"
 #include "test_result.hpp"
+#include <feed/parser/parse_fields.hpp>
+#include <feed/parser/ticker_parser.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>

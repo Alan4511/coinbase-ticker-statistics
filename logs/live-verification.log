@@ -1,0 +1,23 @@
+Live Coinbase ticker capture and independent verification — batch flushing
+Started UTC: 2026-10-04T04:53:41.884352+00:00
+Command: ./build/bin/coinbase_ticker_statistics_app --config config/live_verification.json
+Symbols: BTC-USD, ETH-USD, SOL-USD; window: 300 seconds
+Flushing: every 100 rows or 250 ms from the first pending row
+Capture duration: 30 seconds; CSV: build/live.csv
+Application diagnostics: logs/live-run.log
+
+Capture midpoint: 40 complete data rows visible while the application was running.
+Capture complete; harness sent SIGTERM to request graceful shutdown.
+Application return code: 0
+Finished UTC: 2026-10-04T04:54:12.330229+00:00
+
+Shutdown result: close/cleanup and final CSV flush completed; exit status zero.
+
+Independent CSV verification (1e-12 relative / 1e-15 absolute tolerance):
+Command: python3 tools/verify_csv.py --config config/live_verification.json
+PASS live.csv: 96 rows independently verified
+  BTC-USD: observations=42 expired=0 observed_span_seconds=26.773576
+  ETH-USD: observations=33 expired=0 observed_span_seconds=27.36581
+  SOL-USD: observations=21 expired=0 observed_span_seconds=27.180349
+
+Scope: the short capture does not prove five-minute expiration; deterministic tests cover expiration.

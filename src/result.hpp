@@ -11,7 +11,7 @@ enum class ErrorCode {
     InvalidConfiguration,
     InvalidInput,
     OutOfRange,
-    LateTrade,
+    OutOfOrderTimestamp,
     FileIo,
     OutputIo,
     Protocol,

@@ -1,45 +1,72 @@
 #pragma once
 
-#include "result.hpp"
-
-#include "feed/transport/feed_options.hpp"
-#include "types.hpp"
+#include "feed/transport/feed_connection.hpp"
+#include "feed/transport/feed_handler.hpp"
+#include <result.hpp>
+#include <types.hpp>
 
 #include <boost/asio/io_context.hpp>
 
+#include <cstddef>
 #include <functional>
 #include <memory>
-#include <string_view>
+#include <utility>
 
 namespace coinbase_ticker_statistics {
 
-/** Callbacks borrow data only for their invocation on the io_context thread. */
-struct FeedCallbacks {
-    std::function<Result<void>(std::string_view)> message;
-    std::function<Result<void>()> connected;
-    std::function<void(Result<void>)> stopped;
+struct FeedCounts {
+    std::size_t received_messages{};
+    std::size_t ticker_updates{};
 };
 
-/** One asynchronous TLS WebSocket; connection ownership is independent of symbol state. */
+/** Receive and decode ticker updates over a verified TLS WebSocket, with bounded setup and shutdown. */
 class TickerFeed {
   public:
-    /** io_context and callback targets must outlive this connection's pending handlers. */
+    /** The event loop and borrowed handler must outlive all pending operations. */
+    template <FeedHandler Handler>
     [[nodiscard]] static Result<std::unique_ptr<TickerFeed>>
-    create(boost::asio::io_context &io, FeedConfig config, Symbols symbols, FeedCallbacks callbacks);
+    create(boost::asio::io_context &io, FeedConfig config, const Symbols &symbols, Handler &handler);
     ~TickerFeed();
     TickerFeed(const TickerFeed &) = delete;
     TickerFeed &operator=(const TickerFeed &) = delete;
-    TickerFeed(TickerFeed &&) = delete;
-    TickerFeed &operator=(TickerFeed &&) = delete;
-    /** Begin DNS, TCP, TLS, WebSocket and subscription operations, each asynchronously. */
+
     [[nodiscard]] Result<void> start();
-    /** Request bounded close on the io_context thread; completion reports errors via stopped. */
+    /** Call on the event-loop thread. Close an active WebSocket or cancel setup. */
     void stop();
+    [[nodiscard]] const FeedCounts &counts() const noexcept;
 
   private:
-    class Session;
-    explicit TickerFeed(std::shared_ptr<Session> session);
-    std::shared_ptr<Session> session_;
+    // Only the factory adapts the borrowed object; callers supply its typed methods.
+    struct Events {
+        std::function<Result<void>()> on_connected;
+        std::function<Result<void>(const TickerUpdate &)> on_message;
+        std::function<void(Result<void>)> on_stopped;
+    };
+    [[nodiscard]] static Result<std::unique_ptr<TickerFeed>>
+    create_feed(boost::asio::io_context &io, FeedConfig config, const Symbols &symbols, Events events);
+    class InputHandler;
+    TickerFeed(std::unique_ptr<InputHandler> input, std::unique_ptr<FeedConnection> connection);
+    // Destroy the connection before its borrowed input handler.
+    std::unique_ptr<InputHandler> input_;
+    std::unique_ptr<FeedConnection> connection_;
 };
+
+template <FeedHandler Handler>
+Result<std::unique_ptr<TickerFeed>>
+TickerFeed::create(boost::asio::io_context &io, FeedConfig config, const Symbols &symbols, Handler &handler) {
+    Events events{.on_connected =
+                      [&handler] {
+                          return handler.on_connected();
+                      },
+                  .on_message =
+                      [&handler](const TickerUpdate &ticker_update) {
+                          return handler.on_message(ticker_update);
+                      },
+                  .on_stopped =
+                      [&handler](Result<void> completion) {
+                          handler.on_stopped(std::move(completion));
+                      }};
+    return create_feed(io, std::move(config), symbols, std::move(events));
+}
 
 } // namespace coinbase_ticker_statistics

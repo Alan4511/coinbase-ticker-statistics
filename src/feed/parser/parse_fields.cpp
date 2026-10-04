@@ -34,7 +34,7 @@ unsigned parse_decimal_digits(std::string_view text, std::size_t start, std::siz
 
 /** Some supported libc++ versions lack floating-point from_chars. Never narrow to double. */
 template <std::floating_point Number>
-Result<Number> parse_decimal_number(std::string_view text) {
+Result<Number> convert_decimal_price(std::string_view text) {
     Number value{};
     if constexpr (requires { std::from_chars(text.data(), text.data() + text.size(), value); }) {
         const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -90,7 +90,7 @@ Result<Price> parse_price(std::string_view text) {
     if (position != text.size())
         return fail(ErrorCode::InvalidInput, "Invalid price syntax");
 
-    const auto price = parse_decimal_number<Price>(text);
+    const auto price = convert_decimal_price<Price>(text);
     if (!price)
         return std::unexpected(price.error());
     if (!std::isfinite(*price) || (*price == 0 && nonzero_significand)) {

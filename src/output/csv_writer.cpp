@@ -26,7 +26,9 @@ Result<void> run_output_operation(std::ostream &stream, const char *failure_mess
 } // namespace
 
 Result<void> CsvWriter::write_header() {
-    return write_text(csv_header);
+    return write_text(csv_header).and_then([this] {
+        return flush();
+    });
 }
 
 void CsvWriter::append_field(std::string &row, std::string_view field) const {
@@ -56,19 +58,19 @@ Result<void> CsvWriter::write_text(std::string_view text) {
 
 Result<void> CsvWriter::write_statistics(const StatisticsUpdate &update) {
     row_.clear(); // Retain storage between updates.
-    const auto timestamp = format_utc_timestamp(update.trade.exchange_time);
+    const auto timestamp = format_utc_timestamp(update.ticker_update.exchange_time);
     if (!timestamp)
         return std::unexpected(timestamp.error());
     row_ += *timestamp;
     row_ += ',';
-    append_field(row_, update.trade.symbol);
+    append_field(row_, update.ticker_update.symbol);
     const auto append_numeric_field = [this](auto value) -> Result<void> {
         row_ += ',';
         return append_number(row_, value);
     };
-    if (auto result = append_numeric_field(update.trade.trade_id); !result)
+    if (auto result = append_numeric_field(update.ticker_update.trade_id); !result)
         return result;
-    if (auto result = append_numeric_field(update.trade.price); !result)
+    if (auto result = append_numeric_field(update.ticker_update.price); !result)
         return result;
     if (auto result = append_numeric_field(update.statistics.count); !result)
         return result;
@@ -79,19 +81,13 @@ Result<void> CsvWriter::write_statistics(const StatisticsUpdate &update) {
     }
     row_ += '\n';
     // Formatting errors never publish a partial row; the next call clears scratch storage.
-    if (auto written = write_text(row_); !written)
-        return written;
-    ++pending_rows_;
-    return pending_rows_ >= flush_every_rows_ ? flush() : Result<void>{};
+    return write_text(row_);
 }
 
 Result<void> CsvWriter::flush() {
-    auto result = run_output_operation(stream_, "Flushing CSV output failed", [this] {
+    return run_output_operation(stream_, "Flushing CSV output failed", [this] {
         stream_.flush();
     });
-    if (result)
-        pending_rows_ = 0;
-    return result;
 }
 
 } // namespace coinbase_ticker_statistics

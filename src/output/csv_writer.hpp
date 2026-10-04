@@ -1,7 +1,8 @@
 #pragma once
 
-#include "result.hpp"
-#include "types.hpp"
+#include "output/sink.hpp"
+#include <result.hpp>
+#include <types.hpp>
 
 #include <ostream>
 #include <string>
@@ -10,14 +11,13 @@
 namespace coinbase_ticker_statistics {
 
 /**
- * A synchronous CSV writer, owned and called by the application's event loop.
- * Flush after a configured number of rows; the application handles timed and final flushing.
+ * A synchronous CSV writer borrowing an output stream.
+ * Publish the header immediately; the sink controls row flushing.
  */
 class CsvWriter final {
   public:
     /** Borrow a stream that must outlive this writer. Construction performs no I/O. */
-    explicit CsvWriter(std::ostream &stream, std::size_t flush_every_rows = 1)
-        : stream_(stream), flush_every_rows_(flush_every_rows) {
+    explicit CsvWriter(std::ostream &stream) : stream_(stream) {
     }
 
     CsvWriter(const CsvWriter &) = delete;
@@ -41,9 +41,9 @@ class CsvWriter final {
     [[nodiscard]] Result<void> write_text(std::string_view text);
 
     std::ostream &stream_;
-    std::size_t flush_every_rows_;
-    std::size_t pending_rows_{};
     std::string row_;
 };
+
+static_assert(OutputSink<CsvWriter>);
 
 } // namespace coinbase_ticker_statistics

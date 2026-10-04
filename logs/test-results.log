@@ -1,0 +1,277 @@
+Test project /Users/alan/custom c++ impl/sparkland/build
+        Start   1: SlidingWindow.StartsEmptyAndComputesOddAndEvenStatistics
+  1/136 Test   #1: SlidingWindow.StartsEmptyAndComputesOddAndEvenStatistics ................................   Passed    0.04 sec
+        Start   2: SlidingWindow.DefaultBoundaryExcludesExactlyFiveMinutesOld
+  2/136 Test   #2: SlidingWindow.DefaultBoundaryExcludesExactlyFiveMinutesOld ..............................   Passed    0.04 sec
+        Start   3: SlidingWindow.LongerDurationUsesSameWindowRules
+  3/136 Test   #3: SlidingWindow.LongerDurationUsesSameWindowRules .........................................   Passed    0.04 sec
+        Start   4: SlidingWindow.SameTimestampAndRepeatedPricesAreDistinctSamples
+  4/136 Test   #4: SlidingWindow.SameTimestampAndRepeatedPricesAreDistinctSamples ..........................   Passed    0.04 sec
+        Start   5: SlidingWindow.IgnoredDuplicateDoesNotExpireDataOrAdvanceWatermark
+  5/136 Test   #5: SlidingWindow.IgnoredDuplicateDoesNotExpireDataOrAdvanceWatermark .......................   Passed    0.04 sec
+        Start   6: SlidingWindow.DuplicateIdentifiersCanBeReusedAfterExpiry
+  6/136 Test   #6: SlidingWindow.DuplicateIdentifiersCanBeReusedAfterExpiry ................................   Passed    0.04 sec
+        Start   7: SlidingWindow.LateEventsFailWithoutMutation
+  7/136 Test   #7: SlidingWindow.LateEventsFailWithoutMutation .............................................   Passed    0.04 sec
+        Start   8: SlidingWindow.RejectsNonfiniteInputAndSumOverflowWithoutMutation
+  8/136 Test   #8: SlidingWindow.RejectsNonfiniteInputAndSumOverflowWithoutMutation ........................   Passed    0.04 sec
+        Start   9: SlidingWindow.CompensationPreservesSmallPricesWhenLargePriceExpires
+  9/136 Test   #9: SlidingWindow.CompensationPreservesSmallPricesWhenLargePriceExpires .....................   Passed    0.04 sec
+        Start  10: SlidingWindow.ValidatesDuration
+ 10/136 Test  #10: SlidingWindow.ValidatesDuration .........................................................   Passed    0.04 sec
+        Start  11: SlidingWindow.HandlesCutoffBeforeRepresentableTimestampRange
+ 11/136 Test  #11: SlidingWindow.HandlesCutoffBeforeRepresentableTimestampRange ............................   Passed    0.04 sec
+        Start  12: SlidingWindow.RandomizedUpdatesMatchIndependentSortedReference
+ 12/136 Test  #12: SlidingWindow.RandomizedUpdatesMatchIndependentSortedReference ..........................   Passed    0.22 sec
+        Start  13: StatisticsProcessor.RoutesInterleavedSymbolsIndependently
+ 13/136 Test  #13: StatisticsProcessor.RoutesInterleavedSymbolsIndependently ...............................   Passed    0.04 sec
+        Start  14: StatisticsProcessor.DistinguishesFilteredEventsFromErrors
+ 14/136 Test  #14: StatisticsProcessor.DistinguishesFilteredEventsFromErrors ...............................   Passed    0.04 sec
+        Start  15: StatisticsProcessor.ExchangeTimeControlsExpiration
+ 15/136 Test  #15: StatisticsProcessor.ExchangeTimeControlsExpiration ......................................   Passed    0.04 sec
+        Start  16: StatisticsProcessor.RejectsInvalidRouting
+ 16/136 Test  #16: StatisticsProcessor.RejectsInvalidRouting ...............................................   Passed    0.04 sec
+        Start  17: TickerParser.DecodesPriceFullWidthTradeIdAndExchangeTimestamp
+ 17/136 Test  #17: TickerParser.DecodesPriceFullWidthTradeIdAndExchangeTimestamp ...........................   Passed    0.04 sec
+        Start  18: TickerParser.KeepsEachSymbolsIdentityAndAcceptsZeroTradeId
+ 18/136 Test  #18: TickerParser.KeepsEachSymbolsIdentityAndAcceptsZeroTradeId ..............................   Passed    0.04 sec
+        Start  19: TickerParser.IgnoresAcknowledgementsAndOtherTypedMessages
+ 19/136 Test  #19: TickerParser.IgnoresAcknowledgementsAndOtherTypedMessages ...............................   Passed    0.04 sec
+        Start  20: TickerParser.SurfacesExchangeErrorsDistinctFromMalformedMarketData
+ 20/136 Test  #20: TickerParser.SurfacesExchangeErrorsDistinctFromMalformedMarketData ......................   Passed    0.04 sec
+        Start  21: TickerParser.RejectsMalformedMessageEnvelope
+ 21/136 Test  #21: TickerParser.RejectsMalformedMessageEnvelope ............................................   Passed    0.04 sec
+        Start  22: TickerParser.RequiresAllTickerFields
+ 22/136 Test  #22: TickerParser.RequiresAllTickerFields ....................................................   Passed    0.04 sec
+        Start  23: TickerParser.RejectsWrongTypesAndEmptyStringFields
+ 23/136 Test  #23: TickerParser.RejectsWrongTypesAndEmptyStringFields ......................................   Passed    0.04 sec
+        Start  24: TickerParser.RejectsLossyOrInvalidTradeIds
+ 24/136 Test  #24: TickerParser.RejectsLossyOrInvalidTradeIds ..............................................   Passed    0.04 sec
+        Start  25: TickerParser.RejectsBadPricesAndTimestamps
+ 25/136 Test  #25: TickerParser.RejectsBadPricesAndTimestamps ..............................................   Passed    0.04 sec
+        Start  26: FeedConnection.SendsOpaqueSubscriptionAndDeliversUnparsedText
+ 26/136 Test  #26: FeedConnection.SendsOpaqueSubscriptionAndDeliversUnparsedText ...........................   Passed    0.05 sec
+        Start  27: FeedConnection.PreservesConnectedHandlerFailureWithoutReadingMessages
+ 27/136 Test  #27: FeedConnection.PreservesConnectedHandlerFailureWithoutReadingMessages ...................   Passed    0.05 sec
+        Start  28: FeedConnection.RejectsInvalidConfigurationBeforeConnecting
+ 28/136 Test  #28: FeedConnection.RejectsInvalidConfigurationBeforeConnecting ..............................   Passed    0.04 sec
+        Start  29: FeedConnection.RejectsAnUntrustedServerCertificate
+ 29/136 Test  #29: FeedConnection.RejectsAnUntrustedServerCertificate ......................................   Passed    0.04 sec
+        Start  30: FeedConnection.RejectsBinaryMessages
+ 30/136 Test  #30: FeedConnection.RejectsBinaryMessages ....................................................   Passed    0.05 sec
+        Start  31: FeedConnection.EnforcesMessageSizeLimit
+ 31/136 Test  #31: FeedConnection.EnforcesMessageSizeLimit .................................................   Passed    0.05 sec
+        Start  32: FeedConnection.StopBeforeStartCompletesOnce
+ 32/136 Test  #32: FeedConnection.StopBeforeStartCompletesOnce .............................................   Passed    0.05 sec
+        Start  33: FeedConnection.ValidatesDirectDeadlineSettingsBeforeCreatingTheConnection
+ 33/136 Test  #33: FeedConnection.ValidatesDirectDeadlineSettingsBeforeCreatingTheConnection ...............   Passed    0.05 sec
+        Start  34: FeedConnection.ConnectionDeadlineInterruptsPendingTlsHandshake
+ 34/136 Test  #34: FeedConnection.ConnectionDeadlineInterruptsPendingTlsHandshake ..........................   Passed    1.05 sec
+        Start  35: TickerFeed.SubscribesDecodesTickerUpdatesFiltersControlMessagesAndRecognizesPeerClose
+ 35/136 Test  #35: TickerFeed.SubscribesDecodesTickerUpdatesFiltersControlMessagesAndRecognizesPeerClose ...   Passed    0.06 sec
+        Start  36: TickerFeed.RejectsMalformedInputBeforeNotifyingTheMessageHandler
+ 36/136 Test  #36: TickerFeed.RejectsMalformedInputBeforeNotifyingTheMessageHandler ........................   Passed    0.05 sec
+        Start  37: TickerFeed.PreservesMessageHandlerFailureAndStopsDelivery
+ 37/136 Test  #37: TickerFeed.PreservesMessageHandlerFailureAndStopsDelivery ...............................   Passed    0.04 sec
+        Start  38: TickerFeed.RejectsInvalidConfigurationBeforeConnecting
+ 38/136 Test  #38: TickerFeed.RejectsInvalidConfigurationBeforeConnecting ..................................   Passed    0.04 sec
+        Start  39: Price.ParsesWithoutConfiguredDecimalScale
+ 39/136 Test  #39: Price.ParsesWithoutConfiguredDecimalScale ...............................................   Passed    0.04 sec
+        Start  40: Price.RejectsMalformedNegativeAndNonfiniteInput
+ 40/136 Test  #40: Price.RejectsMalformedNegativeAndNonfiniteInput .........................................   Passed    0.04 sec
+        Start  41: Price.RejectsInvalidOutput
+ 41/136 Test  #41: Price.RejectsInvalidOutput ..............................................................   Passed    0.04 sec
+        Start  42: Price.FullPrecisionOutputRoundTripsWithoutDoubleNarrowing
+ 42/136 Test  #42: Price.FullPrecisionOutputRoundTripsWithoutDoubleNarrowing ...............................   Passed    0.04 sec
+        Start  43: Timestamp.ParsesUtcToNanosecondPrecision
+ 43/136 Test  #43: Timestamp.ParsesUtcToNanosecondPrecision ................................................   Passed    0.07 sec
+        Start  44: Timestamp.RejectsInvalidDatesSyntaxAndUnsupportedPrecision
+ 44/136 Test  #44: Timestamp.RejectsInvalidDatesSyntaxAndUnsupportedPrecision ..............................   Passed    0.05 sec
+        Start  45: Timestamp.RejectsInvalidOutput
+ 45/136 Test  #45: Timestamp.RejectsInvalidOutput ..........................................................   Passed    0.04 sec
+        Start  46: Timestamp.FormatsUtcWithNanosecondPrecision
+ 46/136 Test  #46: Timestamp.FormatsUtcWithNanosecondPrecision .............................................   Passed    0.04 sec
+        Start  47: Timestamp.DeterministicRoundTripsAcrossCalendarBoundaries
+ 47/136 Test  #47: Timestamp.DeterministicRoundTripsAcrossCalendarBoundaries ...............................   Passed    0.05 sec
+        Start  48: Subscription.BuildsPublicMultiSymbolTickerSubscription
+ 48/136 Test  #48: Subscription.BuildsPublicMultiSymbolTickerSubscription ..................................   Passed    0.04 sec
+        Start  49: Subscription.ValidatesProductIdsWithoutSerialization
+ 49/136 Test  #49: Subscription.ValidatesProductIdsWithoutSerialization ....................................   Passed    0.04 sec
+        Start  50: CsvWriter.WritesExactHeaderExchangeTimeAndUnroundedPrices
+ 50/136 Test  #50: CsvWriter.WritesExactHeaderExchangeTimeAndUnroundedPrices ...............................   Passed    0.04 sec
+        Start  51: CsvWriter.WritesAllAvailableFloatingPointDigits
+ 51/136 Test  #51: CsvWriter.WritesAllAvailableFloatingPointDigits .........................................   Passed    0.04 sec
+        Start  52: CsvWriter.EscapesDelimiterQuotesAndLineEndings
+ 52/136 Test  #52: CsvWriter.EscapesDelimiterQuotesAndLineEndings ..........................................   Passed    0.04 sec
+        Start  53: CsvWriter.DoesNotDependOnTheBorrowedStreamsLocaleOrFormattingFlags
+ 53/136 Test  #53: CsvWriter.DoesNotDependOnTheBorrowedStreamsLocaleOrFormattingFlags ......................   Passed    0.04 sec
+        Start  54: CsvWriter.ExplicitFlushPublishesBufferedRows
+ 54/136 Test  #54: CsvWriter.ExplicitFlushPublishesBufferedRows ............................................   Passed    0.04 sec
+        Start  55: CsvWriter.DiscardsInvalidRowAndReusesBuffer
+ 55/136 Test  #55: CsvWriter.DiscardsInvalidRowAndReusesBuffer .............................................   Passed    0.04 sec
+        Start  56: CsvWriter.PreservesFullWidthIntegerFields
+ 56/136 Test  #56: CsvWriter.PreservesFullWidthIntegerFields ...............................................   Passed    0.04 sec
+        Start  57: CsvWriter.LeavesFlushPolicyToTheSink
+ 57/136 Test  #57: CsvWriter.LeavesFlushPolicyToTheSink ....................................................   Passed    0.04 sec
+        Start  58: CsvWriter.ReportsHeaderWriteFailure
+ 58/136 Test  #58: CsvWriter.ReportsHeaderWriteFailure .....................................................   Passed    0.04 sec
+        Start  59: CsvWriter.ReportsRowWriteFailure
+ 59/136 Test  #59: CsvWriter.ReportsRowWriteFailure ........................................................   Passed    0.04 sec
+        Start  60: CsvWriter.ReportsFlushFailure
+ 60/136 Test  #60: CsvWriter.ReportsFlushFailure ...........................................................   Passed    0.04 sec
+        Start  61: CsvWriter.ConvertsExceptionEnabledLibraryStreamFailures
+ 61/136 Test  #61: CsvWriter.ConvertsExceptionEnabledLibraryStreamFailures .................................   Passed    0.04 sec
+        Start  62: CsvSink.ImmediateModePublishesRowsBeforeClose
+ 62/136 Test  #62: CsvSink.ImmediateModePublishesRowsBeforeClose ...........................................   Passed    0.04 sec
+        Start  63: CsvSink.RowThresholdFlushesAndCancelledWaitDoesNotFlushNextBatch
+ 63/136 Test  #63: CsvSink.RowThresholdFlushesAndCancelledWaitDoesNotFlushNextBatch ........................   Passed    0.04 sec
+        Start  64: CsvSink.TimerPublishesPartialBatchWithoutAnotherUpdate
+ 64/136 Test  #64: CsvSink.TimerPublishesPartialBatchWithoutAnotherUpdate ..................................   Passed    0.06 sec
+        Start  65: CsvSink.AdditionalRowsDoNotPostponeTheFirstRowsDeadline
+ 65/136 Test  #65: CsvSink.AdditionalRowsDoNotPostponeTheFirstRowsDeadline .................................   Passed    0.17 sec
+        Start  66: CsvSink.CloseFlushesPartialBatchAndCancelsLongTimer
+ 66/136 Test  #66: CsvSink.CloseFlushesPartialBatchAndCancelsLongTimer .....................................   Passed    0.05 sec
+        Start  67: CsvSink.InvalidRowsDoNotCountTowardsTheBatch
+ 67/136 Test  #67: CsvSink.InvalidRowsDoNotCountTowardsTheBatch ............................................   Passed    0.04 sec
+        Start  68: CsvSink.RejectsSecondOpenWithoutTruncatingPublishedRows
+ 68/136 Test  #68: CsvSink.RejectsSecondOpenWithoutTruncatingPublishedRows .................................   Passed    0.04 sec
+        Start  69: CsvSink.ReportsDirectoryAndFileOpeningErrors
+ 69/136 Test  #69: CsvSink.ReportsDirectoryAndFileOpeningErrors ............................................   Passed    0.04 sec
+        Start  70: CsvSink.RequiresAnErrorHandlerBeforeOpeningTheFile
+ 70/136 Test  #70: CsvSink.RequiresAnErrorHandlerBeforeOpeningTheFile ......................................   Passed    0.04 sec
+        Start  71: CsvSink.TimedFlushReportsOutputFailureWithoutAnotherUpdate
+ 71/136 Test  #71: CsvSink.TimedFlushReportsOutputFailureWithoutAnotherUpdate ..............................   Passed    0.06 sec
+        Start  72: Config.RejectsMissingRequiredSettings
+ 72/136 Test  #72: Config.RejectsMissingRequiredSettings ...................................................   Passed    0.04 sec
+        Start  73: Config.SuppliesDefaultsOnlyForOptionalSettings
+ 73/136 Test  #73: Config.SuppliesDefaultsOnlyForOptionalSettings ..........................................   Passed    0.04 sec
+        Start  74: Config.ParsesConfigurableEndpointLimitsAndOutput
+ 74/136 Test  #74: Config.ParsesConfigurableEndpointLimitsAndOutput ........................................   Passed    0.04 sec
+        Start  75: Config.ReportsFirstInvalidFieldInReadingOrder
+ 75/136 Test  #75: Config.ReportsFirstInvalidFieldInReadingOrder ...........................................   Passed    0.04 sec
+        Start  76: Config.AcceptsIntegerPolicyBoundaries
+ 76/136 Test  #76: Config.AcceptsIntegerPolicyBoundaries ...................................................   Passed    0.04 sec
+        Start  77: Config.ResolvesFilePathsRelativeToConfigurationDirectory
+ 77/136 Test  #77: Config.ResolvesFilePathsRelativeToConfigurationDirectory ................................   Passed    0.04 sec
+        Start  78: Config.MissingOutputPathCannotSelectAnImplicitFile
+ 78/136 Test  #78: Config.MissingOutputPathCannotSelectAnImplicitFile ......................................   Passed    0.04 sec
+        Start  79: Config.ReportsMissingConfigurationFile
+ 79/136 Test  #79: Config.ReportsMissingConfigurationFile ..................................................   Passed    0.04 sec
+        Start  80: Config.CheckedInExamplesAreValidAndUseProjectRelativeBuildPaths
+ 80/136 Test  #80: Config.CheckedInExamplesAreValidAndUseProjectRelativeBuildPaths .........................   Passed    0.04 sec
+        Start  81: Config.KeepsTakeHomeParsingSimpleAndDocumentsLastKeyWins
+ 81/136 Test  #81: Config.KeepsTakeHomeParsingSimpleAndDocumentsLastKeyWins ................................   Passed    0.05 sec
+        Start  82: Pipeline.JsonThroughRoutingAndWindowsMatchesIndependentCsvFixture
+ 82/136 Test  #82: Pipeline.JsonThroughRoutingAndWindowsMatchesIndependentCsvFixture .......................   Passed    0.05 sec
+        Start  83: Logging.IncludesUtcSeverityAndConnectionContextOnOneLine
+ 83/136 Test  #83: Logging.IncludesUtcSeverityAndConnectionContextOnOneLine ................................   Passed    0.04 sec
+        Start  84: Logging.StreamFailuresDoNotEscapeIntoApplicationCode
+ 84/136 Test  #84: Logging.StreamFailuresDoNotEscapeIntoApplicationCode ....................................   Passed    0.04 sec
+        Start  85: Application.InvalidSettingsDoNotTruncateExistingOutput
+ 85/136 Test  #85: Application.InvalidSettingsDoNotTruncateExistingOutput ..................................   Passed    0.04 sec
+        Start  86: Application.WritesCsvAndReportsPeerCloseWithFinalCounts
+ 86/136 Test  #86: Application.WritesCsvAndReportsPeerCloseWithFinalCounts .................................   Passed    0.05 sec
+        Start  87: Application.MalformedTickerFailsAndFlushesPreviousRows
+ 87/136 Test  #87: Application.MalformedTickerFailsAndFlushesPreviousRows ..................................   Passed    0.05 sec
+        Start  88: Application.FailedTlsConnectionPreservesExistingOutput
+ 88/136 Test  #88: Application.FailedTlsConnectionPreservesExistingOutput ..................................   Passed    0.04 sec
+        Start  89: Application.StatisticsFailureStopsTheFeedAndFlushesPreviousRows
+ 89/136 Test  #89: Application.StatisticsFailureStopsTheFeedAndFlushesPreviousRows .........................   Passed    0.04 sec
+        Start  90: Application.SigtermDuringIdleReadClosesWebSocketFlushesAndLogsFinalCounts
+ 90/136 Test  #90: Application.SigtermDuringIdleReadClosesWebSocketFlushesAndLogsFinalCounts ...............   Passed    0.08 sec
+        Start  91: Application.SigintDuringIdleReadClosesWebSocketFlushesAndLogsFinalCounts
+ 91/136 Test  #91: Application.SigintDuringIdleReadClosesWebSocketFlushesAndLogsFinalCounts ................   Passed    0.08 sec
+        Start  92: Application.ImmediateFlushingPublishesRowsDuringIdleRead
+ 92/136 Test  #92: Application.ImmediateFlushingPublishesRowsDuringIdleRead ................................   Passed    0.05 sec
+        Start  93: Application.TimedFlushFailureStopsAnIdleFeed
+ 93/136 Test  #93: Application.TimedFlushFailureStopsAnIdleFeed ............................................   Passed    0.07 sec
+        Start  94: Application.ShutdownDeadlineForcesCloseWhenPeerDoesNotRespond
+ 94/136 Test  #94: Application.ShutdownDeadlineForcesCloseWhenPeerDoesNotRespond ...........................   Passed    1.08 sec
+        Start  95: Application.SignalDuringConnectionSetupCancelsAndPreservesOutput
+ 95/136 Test  #95: Application.SignalDuringConnectionSetupCancelsAndPreservesOutput ........................   Passed    0.08 sec
+        Start  96: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/0
+ 96/136 Test  #96: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/0 ....................   Passed    0.04 sec
+        Start  97: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/1
+ 97/136 Test  #97: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/1 ....................   Passed    0.04 sec
+        Start  98: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/2
+ 98/136 Test  #98: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/2 ....................   Passed    0.04 sec
+        Start  99: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/3
+ 99/136 Test  #99: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/3 ....................   Passed    0.04 sec
+        Start 100: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/4
+100/136 Test #100: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/4 ....................   Passed    0.04 sec
+        Start 101: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/5
+101/136 Test #101: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/5 ....................   Passed    0.04 sec
+        Start 102: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/6
+102/136 Test #102: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/6 ....................   Passed    0.04 sec
+        Start 103: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/7
+103/136 Test #103: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/7 ....................   Passed    0.04 sec
+        Start 104: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/8
+104/136 Test #104: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/8 ....................   Passed    0.04 sec
+        Start 105: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/9
+105/136 Test #105: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/9 ....................   Passed    0.04 sec
+        Start 106: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/10
+106/136 Test #106: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/10 ...................   Passed    0.04 sec
+        Start 107: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/11
+107/136 Test #107: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/11 ...................   Passed    0.04 sec
+        Start 108: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/12
+108/136 Test #108: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/12 ...................   Passed    0.04 sec
+        Start 109: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/13
+109/136 Test #109: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/13 ...................   Passed    0.04 sec
+        Start 110: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/14
+110/136 Test #110: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/14 ...................   Passed    0.04 sec
+        Start 111: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/15
+111/136 Test #111: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/15 ...................   Passed    0.04 sec
+        Start 112: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/16
+112/136 Test #112: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/16 ...................   Passed    0.04 sec
+        Start 113: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/17
+113/136 Test #113: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/17 ...................   Passed    0.04 sec
+        Start 114: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/18
+114/136 Test #114: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/18 ...................   Passed    0.04 sec
+        Start 115: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/19
+115/136 Test #115: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/19 ...................   Passed    0.04 sec
+        Start 116: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/20
+116/136 Test #116: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/20 ...................   Passed    0.04 sec
+        Start 117: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/21
+117/136 Test #117: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/21 ...................   Passed    0.04 sec
+        Start 118: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/22
+118/136 Test #118: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/22 ...................   Passed    0.04 sec
+        Start 119: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/23
+119/136 Test #119: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/23 ...................   Passed    0.04 sec
+        Start 120: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/24
+120/136 Test #120: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/24 ...................   Passed    0.04 sec
+        Start 121: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/25
+121/136 Test #121: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/25 ...................   Passed    0.04 sec
+        Start 122: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/26
+122/136 Test #122: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/26 ...................   Passed    0.04 sec
+        Start 123: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/27
+123/136 Test #123: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/27 ...................   Passed    0.04 sec
+        Start 124: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/28
+124/136 Test #124: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/28 ...................   Passed    0.04 sec
+        Start 125: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/29
+125/136 Test #125: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/29 ...................   Passed    0.04 sec
+        Start 126: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/30
+126/136 Test #126: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/30 ...................   Passed    0.04 sec
+        Start 127: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/31
+127/136 Test #127: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/31 ...................   Passed    0.04 sec
+        Start 128: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/32
+128/136 Test #128: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/32 ...................   Passed    0.04 sec
+        Start 129: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/33
+129/136 Test #129: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/33 ...................   Passed    0.04 sec
+        Start 130: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/34
+130/136 Test #130: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/34 ...................   Passed    0.04 sec
+        Start 131: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/35
+131/136 Test #131: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/35 ...................   Passed    0.04 sec
+        Start 132: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/36
+132/136 Test #132: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/36 ...................   Passed    0.04 sec
+        Start 133: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/37
+133/136 Test #133: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/37 ...................   Passed    0.04 sec
+        Start 134: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/38
+134/136 Test #134: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/38 ...................   Passed    0.04 sec
+        Start 135: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/39
+135/136 Test #135: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/39 ...................   Passed    0.04 sec
+        Start 136: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/40
+136/136 Test #136: Schema/InvalidConfiguration.RejectsWithoutCoercionOrSilentFallback/40 ...................   Passed    0.04 sec
+
+100% tests passed out of 136
+
+Total Test time (real) =   8.19 sec

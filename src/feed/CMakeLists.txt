@@ -1,4 +1,5 @@
 add_library(coinbase_ticker_statistics_feed
+    transport/feed_connection.cpp
     transport/ticker_feed.cpp
     parser/ticker_parser.cpp
     parser/parse_fields.cpp

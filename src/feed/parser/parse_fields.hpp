@@ -1,7 +1,7 @@
 #pragma once
 
-#include "result.hpp"
-#include "types.hpp"
+#include <result.hpp>
+#include <types.hpp>
 
 #include <string_view>
 

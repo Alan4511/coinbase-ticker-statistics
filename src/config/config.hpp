@@ -1,34 +1,28 @@
 #pragma once
 
-#include "feed/transport/feed_options.hpp"
-#include "output/csv_options.hpp"
-#include "result.hpp"
-#include "statistics/window_options.hpp"
-#include "types.hpp"
+#include <feed/transport/feed_config.hpp>
+#include <output/csv_config.hpp>
+#include <result.hpp>
+#include <statistics/window_options.hpp>
+#include <types.hpp>
 
 #include <filesystem>
 #include <string_view>
-#include <vector>
 
 namespace coinbase_ticker_statistics {
 
-/** One unauthenticated ticker subscription; each symbol belongs to exactly one connection. */
-struct ConnectionConfig {
-    Symbols symbols;
-};
-using Connections = std::vector<ConnectionConfig>;
-
-/** Application ownership and operating policy. */
+/** Application settings. Parsing/loading validates them; direct edits require validation again. */
 struct Config {
-    Connections connections;
+    Symbols symbols;
     FeedConfig feed;
     WindowOptions window;
     CsvConfig output;
-    /** Flatten the configured connection groups for independent per-symbol routing. */
-    [[nodiscard]] Symbols symbols() const;
 };
 
-/** Require connection groups and an output path; validate optional settings without coercion. */
+/** Coordinate module policies and application constraints without starting I/O. */
+[[nodiscard]] Result<void> validate_config(const Config &config);
+
+/** Require symbols and an output path; validate optional settings without coercion. */
 [[nodiscard]] Result<Config> parse_config(std::string_view text);
 
 /** Load JSON; resolve output paths relative to the configuration file. */

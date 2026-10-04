@@ -36,8 +36,7 @@ def verify(path, config, require_expiration, relative_tolerance, absolute_tolera
     """Check every column's meaning and report observations/expirations by symbol."""
     window = config.get("window", {})
     duration = window.get("duration_seconds", 300) * NANOSECONDS_PER_SECOND
-    expected_symbols = {symbol for connection in config["connections"]
-                        for symbol in connection["symbols"]}
+    expected_symbols = set(config["symbols"])
     active = defaultdict(deque)
     observations = Counter()
     expirations = Counter()

@@ -1,9 +1,9 @@
 #pragma once
 
-#include "result.hpp"
+#include <result.hpp>
 
 #include "statistics/window_options.hpp"
-#include "types.hpp"
+#include <types.hpp>
 
 #include <deque>
 #include <optional>
@@ -13,9 +13,9 @@
 namespace coinbase_ticker_statistics {
 
 /**
- * Floating-point statistics for a single symbol, owned by one event-loop thread.
+ * Floating-point statistics for a single symbol, owned by the calling thread.
  *
- * Insertion/expiration costs O(log N) per trade; queries cost O(1).
+ * Insertion/expiration costs O(log N) per sample; queries cost O(1).
  * Two ordered partitions use O(N) memory without accumulating stale heap entries.
  * Tree nodes are transferred during rebalancing, avoiding additional allocations.
  * The caller must discard this object if an allocation fails during an update:
@@ -30,13 +30,13 @@ class SlidingWindow {
     [[nodiscard]] static Result<SlidingWindow> create(WindowOptions options);
 
     /**
-     * Expire old observations, insert this trade, and return statistics.
+     * Expire old observations, insert this ticker update, and return statistics.
      * Window time must be nondecreasing across accepted observations. Ignored
      * duplicates return nullopt without changing any state.
      * @return Statistics, a successful nullopt for filtered events, or a typed error.
-     * InvalidInput, LateTrade, and OutOfRange leave state unchanged.
+     * InvalidInput, OutOfOrderTimestamp, and OutOfRange leave state unchanged.
      */
-    [[nodiscard]] Result<std::optional<Statistics>> add_trade(const Trade &trade);
+    [[nodiscard]] Result<std::optional<Statistics>> add_update(const TickerUpdate &ticker_update);
 
     /** Return the last accepted window's statistics, or nullopt before its first event. */
     [[nodiscard]] std::optional<Statistics> snapshot() const;
@@ -49,7 +49,7 @@ class SlidingWindow {
     explicit SlidingWindow(WindowOptions options);
 
     struct WindowSample {
-        Timestamp time;
+        Timestamp exchange_time;
         TradeId trade_id;
         Price price;
     };
@@ -77,8 +77,8 @@ class SlidingWindow {
         SampleCount expired_sample_count;
         CompensatedSum sum_after_update;
     };
-    [[nodiscard]] Result<PendingUpdate> prepare_trade_update(const Trade &trade) const;
-    void insert_trade(const Trade &trade);
+    [[nodiscard]] Result<PendingUpdate> prepare_update(const TickerUpdate &ticker_update) const;
+    void insert_update(const TickerUpdate &ticker_update);
 
     CompensatedSum sum_;
 };

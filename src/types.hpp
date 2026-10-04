@@ -19,7 +19,7 @@ using Symbol = std::string;
 using Symbols = std::vector<Symbol>;
 
 /** Price and identity from a received Coinbase ticker message, using exchange time. */
-struct Trade {
+struct TickerUpdate {
     Timestamp exchange_time;
     Symbol symbol;
     TradeId trade_id;
@@ -37,7 +37,7 @@ struct Statistics {
 
 /** Immutable during synchronous delivery; sinks must copy if they retain an update. */
 struct StatisticsUpdate {
-    Trade trade;
+    TickerUpdate ticker_update;
     Statistics statistics;
 };
 

@@ -1,6 +1,6 @@
 add_library(coinbase_ticker_statistics_application
     application.cpp
-    statistics_processor.cpp
+    application_feed_handler.cpp
 )
 
 target_link_libraries(coinbase_ticker_statistics_application PUBLIC

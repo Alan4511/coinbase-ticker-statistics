@@ -1,6 +1,6 @@
-#include "config/config.hpp"
 #include "test_files.hpp"
 #include "test_result.hpp"
+#include <config/config.hpp>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -21,7 +21,7 @@ std::string with_required_fields(std::string_view settings) {
     if (provided.is_discarded() || !provided.is_object())
         return std::string(settings);
     auto document = nlohmann::json::parse(R"({
-        "connections":[{"symbols":["BTC-USD","ETH-USD","SOL-USD"]}],
+        "symbols":["BTC-USD","ETH-USD","SOL-USD"],
         "output":{"path":"test.csv"}
     })");
     for (const auto &[name, value] : provided.items()) {
@@ -40,8 +40,8 @@ Result<Config> parse_optional_settings(std::string_view settings) {
 TEST(Config, RejectsMissingRequiredSettings) {
     for (const auto *configuration : {R"({})",
                                       R"({"output":{"path":"test.csv"}})",
-                                      R"({"connections":[{"symbols":["BTC-USD"]}]})",
-                                      R"({"connections":[{"symbols":["BTC-USD"]}],"output":{}})",
+                                      R"({"symbols":["BTC-USD"]})",
+                                      R"({"symbols":["BTC-USD"],"output":{}})",
                                       R"({"connections":[{}],"output":{"path":"test.csv"}})"}) {
         ASSERT_RESULT_ERROR(parse_config(configuration), ErrorCode::InvalidConfiguration);
     }
@@ -49,50 +49,43 @@ TEST(Config, RejectsMissingRequiredSettings) {
 
 TEST(Config, SuppliesDefaultsOnlyForOptionalSettings) {
     ASSERT_RESULT_VALUE(config, parse_optional_settings("{}"));
-    EXPECT_EQ(config.symbols(), (std::vector<std::string>{"BTC-USD", "ETH-USD", "SOL-USD"}));
+    EXPECT_EQ(config.symbols, (std::vector<std::string>{"BTC-USD", "ETH-USD", "SOL-USD"}));
     EXPECT_EQ(config.feed.host, "ws-feed.exchange.coinbase.com");
     EXPECT_EQ(config.feed.port, "443");
     EXPECT_EQ(config.feed.target, "/");
+    EXPECT_EQ(config.feed.max_message_bytes, 1'048'576U);
     EXPECT_EQ(config.feed.connect_timeout, 15s);
     EXPECT_EQ(config.feed.close_timeout, 5s);
-    EXPECT_EQ(config.feed.max_message_bytes, 1'048'576U);
     EXPECT_EQ(config.window.duration, 300s);
     EXPECT_EQ(config.output.path, "test.csv");
-    EXPECT_EQ(config.output.flush_every_rows, 1U);
-    EXPECT_EQ(config.output.flush_interval, 1000ms);
+    EXPECT_EQ(config.output.flush_every_rows, 100U);
+    EXPECT_EQ(config.output.flush_interval, 250ms);
 }
 
 TEST(Config, ParsesConfigurableEndpointLimitsAndOutput) {
     constexpr auto configuration = R"({
-        "connections": [{"symbols": ["ETH-USD"]}, {"symbols": ["BTC-USD"]}],
+        "symbols": ["ETH-USD", "BTC-USD"],
         "feed": {
             "host": "localhost", "port": "8443", "target": "/ticker?version=1",
-            "connect_timeout_seconds": 30,
-            "close_timeout_seconds": 2, "max_message_bytes": 65536
+            "max_message_bytes": 65536, "connect_timeout_seconds": 30, "close_timeout_seconds": 2
         },
         "window": {
             "duration_seconds": 3600
         },
-        "output": {"path": "build/first.csv"}
+        "output": {"path": "build/first.csv", "flush_every_rows": 128, "flush_interval_ms": 500}
     })";
     ASSERT_RESULT_VALUE(config, parse_optional_settings(configuration));
-    EXPECT_EQ(config.symbols(), (std::vector<std::string>{"ETH-USD", "BTC-USD"}));
+    EXPECT_EQ(config.symbols, (std::vector<std::string>{"ETH-USD", "BTC-USD"}));
     EXPECT_EQ(config.feed.host, "localhost");
     EXPECT_EQ(config.feed.port, "8443");
     EXPECT_EQ(config.feed.target, "/ticker?version=1");
+    EXPECT_EQ(config.feed.max_message_bytes, 65'536U);
     EXPECT_EQ(config.feed.connect_timeout, 30s);
     EXPECT_EQ(config.feed.close_timeout, 2s);
-    EXPECT_EQ(config.feed.max_message_bytes, 65'536U);
     EXPECT_EQ(config.window.duration, 3600s);
     EXPECT_EQ(config.output.path, "build/first.csv");
-}
-
-TEST(Config, ParsesBatchFlushPolicy) {
-    ASSERT_RESULT_VALUE(config,
-                        parse_optional_settings(R"({"output":{"flush_every_rows":128,"flush_interval_ms":250}})"));
     EXPECT_EQ(config.output.flush_every_rows, 128U);
-    EXPECT_EQ(config.output.flush_interval, 250ms);
-    ASSERT_RESULT_OK(parse_optional_settings(R"({"output":{"flush_interval_ms":86400000}})"));
+    EXPECT_EQ(config.output.flush_interval, 500ms);
 }
 
 TEST(Config, ReportsFirstInvalidFieldInReadingOrder) {
@@ -102,17 +95,18 @@ TEST(Config, ReportsFirstInvalidFieldInReadingOrder) {
     const auto window = parse_optional_settings(R"({"window":{"duration_seconds":false}})");
     ASSERT_FALSE(window);
     EXPECT_NE(window.error().message.find("duration_seconds:"), std::string::npos);
-    const auto output = parse_optional_settings(R"({"output":{"path":false,"flush_every_rows":false}})");
+    const auto output = parse_optional_settings(R"({"output":{"path":false}})");
     ASSERT_FALSE(output);
     EXPECT_NE(output.error().message.find("path:"), std::string::npos);
 }
 
 TEST(Config, AcceptsIntegerPolicyBoundaries) {
     ASSERT_RESULT_OK(parse_optional_settings(R"({
-        "feed": {"port": "65535", "connect_timeout_seconds": 31536000, "close_timeout_seconds": 1},
+        "feed": {"port": "65535", "max_message_bytes": 65536},
         "window": {"duration_seconds": 1},
-        "output": {}
+        "output": {"flush_every_rows": 1, "flush_interval_ms": 1}
     })"));
+    ASSERT_RESULT_OK(parse_optional_settings(R"({"output":{"flush_interval_ms":31536000000}})"));
 }
 
 class InvalidConfiguration : public testing::TestWithParam<const char *> {};
@@ -127,18 +121,22 @@ INSTANTIATE_TEST_SUITE_P(Schema,
                                          "[]",
                                          "null",
                                          "{} trailing",
-                                         R"({"connections":[]})",
-                                         R"({"connections":[{}]})",
-                                         R"({"connections":[{"symbols":[]}]})",
-                                         R"({"connections":[{"symbols":["BTC-USD"]},{"symbols":["BTC-USD"]}]})",
-                                         R"({"connections":[{"symbols":[1]}]})",
-                                         R"({"connections":[{"symbols":["btc-usd"]}]})",
+                                         R"({"symbols":[]})",
+                                         R"({"symbols":null})",
+                                         R"({"symbols":{}})",
+                                         R"({"symbols":["BTC-USD","BTC-USD"]})",
+                                         R"({"symbols":[1]})",
+                                         R"({"symbols":["btc-usd"]})",
                                          R"({"feed":null})",
                                          R"({"feed":{"host":""}})",
                                          R"({"feed":{"port":443}})",
                                          R"({"feed":{"target":"ticker"}})",
-                                         R"({"feed":{"connect_timeout_seconds":0}})",
                                          R"({"feed":{"max_message_bytes":0}})",
+                                         R"({"feed":{"connect_timeout_seconds":0}})",
+                                         R"({"feed":{"connect_timeout_seconds":1.5}})",
+                                         R"({"feed":{"close_timeout_seconds":-1}})",
+                                         R"({"feed":{"close_timeout_seconds":true}})",
+                                         R"({"feed":{"close_timeout_seconds":31536001}})",
                                          R"({"window":[]})",
                                          R"({"window":{"duration_seconds":-1}})",
                                          R"({"window":{"duration_seconds":300.0}})",
@@ -149,13 +147,18 @@ INSTANTIATE_TEST_SUITE_P(Schema,
                                          R"({"output":{"path":""}})",
                                          R"({"output":{"flush_every_rows":0}})",
                                          R"({"output":{"flush_every_rows":-1}})",
-                                         R"({"output":{"flush_every_rows":2.5}})",
+                                         R"({"output":{"flush_every_rows":1.5}})",
                                          R"({"output":{"flush_every_rows":true}})",
                                          R"({"output":{"flush_every_rows":18446744073709551616}})",
                                          R"({"output":{"flush_interval_ms":0}})",
-                                         R"({"output":{"flush_interval_ms":86400001}})",
-                                         R"({"output":{"flush_interval_ms":1.5}})",
-                                         R"({"output":{"flush_interval_ms":null}})"));
+                                         R"({"output":{"flush_interval_ms":-1}})",
+                                         R"({"output":{"flush_interval_ms":2.5}})",
+                                         R"({"output":{"flush_interval_ms":true}})",
+                                         R"({"output":{"flush_interval_ms":31536000001}})",
+                                         R"({"feed":{"max_message_bytes":-1}})",
+                                         R"({"feed":{"max_message_bytes":2.5}})",
+                                         R"({"feed":{"max_message_bytes":true}})",
+                                         R"({"feed":{"max_message_bytes":18446744073709551616}})"));
 
 TEST(Config, ResolvesFilePathsRelativeToConfigurationDirectory) {
     test::TemporaryDirectory fixture;
@@ -166,7 +169,7 @@ TEST(Config, ResolvesFilePathsRelativeToConfigurationDirectory) {
 
 TEST(Config, MissingOutputPathCannotSelectAnImplicitFile) {
     test::TemporaryDirectory fixture;
-    test::write_file(fixture.file("config.json"), R"({"connections":[{"symbols":["BTC-USD"]}],"output":{}})");
+    test::write_file(fixture.file("config.json"), R"({"symbols":["BTC-USD"],"output":{}})");
     ASSERT_RESULT_ERROR(load_config(fixture.file("config.json")), ErrorCode::InvalidConfiguration);
     EXPECT_FALSE(std::filesystem::exists(fixture.file("ticker_statistics.csv")));
 }
@@ -180,7 +183,7 @@ TEST(Config, CheckedInExamplesAreValidAndUseProjectRelativeBuildPaths) {
     const std::filesystem::path project_directory(COINBASE_TICKER_STATISTICS_SOURCE_DIR);
     for (const auto *filename : {"example.json", "live_verification.json"}) {
         ASSERT_RESULT_VALUE(config, load_config(project_directory / "config" / filename));
-        EXPECT_EQ(config.symbols(), (std::vector<std::string>{"BTC-USD", "ETH-USD", "SOL-USD"}));
+        EXPECT_EQ(config.symbols, (std::vector<std::string>{"BTC-USD", "ETH-USD", "SOL-USD"}));
         EXPECT_EQ(config.window.duration, 300s);
         EXPECT_EQ(config.output.path.parent_path(), project_directory / "build");
     }
@@ -190,18 +193,8 @@ TEST(Config, KeepsTakeHomeParsingSimpleAndDocumentsLastKeyWins) {
     ASSERT_RESULT_VALUE(
         config,
         parse_config(
-            R"({"connections":[{"symbols":["BTC-USD"]}],"output":{"path":"test.csv"},"unknown":1,"window":{"duration_seconds":2,"duration_seconds":4}})"));
+            R"({"symbols":["BTC-USD"],"output":{"path":"test.csv"},"unknown":1,"window":{"duration_seconds":2,"duration_seconds":4}})"));
     EXPECT_EQ(config.window.duration, 4s);
-}
-
-TEST(Config, PartitionsSymbolsAcrossConnections) {
-    ASSERT_RESULT_VALUE(
-        config,
-        parse_optional_settings(R"({"connections":[{"symbols":["BTC-USD"]},{"symbols":["ETH-USD","SOL-USD"]}]})"));
-    ASSERT_EQ(config.connections.size(), 2U);
-    EXPECT_EQ(config.connections.front().symbols, Symbols{"BTC-USD"});
-    EXPECT_EQ(config.connections.back().symbols, (Symbols{"ETH-USD", "SOL-USD"}));
-    EXPECT_EQ(config.symbols(), (Symbols{"BTC-USD", "ETH-USD", "SOL-USD"}));
 }
 
 } // namespace

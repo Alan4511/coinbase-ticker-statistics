@@ -1,5 +1,7 @@
 #pragma once
 
+#include <csignal>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -7,10 +9,20 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sys/resource.h>
 #include <system_error>
 #include <utility>
 
 namespace coinbase_ticker_statistics::test {
+
+/** Call only in an isolated child: make regular-file output fail at a known size. */
+inline bool limit_child_file_size(std::size_t maximum_bytes) {
+    rlimit limit{};
+    if (!std::in_range<rlim_t>(maximum_bytes) || ::getrlimit(RLIMIT_FSIZE, &limit) != 0)
+        return false;
+    limit.rlim_cur = static_cast<rlim_t>(maximum_bytes);
+    return std::signal(SIGXFSZ, SIG_IGN) != SIG_ERR && ::setrlimit(RLIMIT_FSIZE, &limit) == 0;
+}
 
 /** Own an isolated directory. A setup failure aborts the test before it can write elsewhere. */
 class TemporaryDirectory {

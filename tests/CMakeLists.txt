@@ -37,4 +37,4 @@ target_compile_definitions(coinbase_ticker_statistics_tests PRIVATE
 coinbase_ticker_statistics_enable_warnings(coinbase_ticker_statistics_tests)
 
 include(GoogleTest)
-gtest_discover_tests(coinbase_ticker_statistics_tests NO_PRETTY_VALUES)
+gtest_discover_tests(coinbase_ticker_statistics_tests NO_PRETTY_VALUES PROPERTIES TIMEOUT 15)

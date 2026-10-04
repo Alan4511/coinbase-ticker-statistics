@@ -1,9 +1,9 @@
-#include "feed/parser/parse_fields.hpp"
-#include "output/format_fields.hpp"
 #include "test_result.hpp"
 #include <array>
+#include <feed/parser/parse_fields.hpp>
 #include <gtest/gtest.h>
 #include <limits>
+#include <output/format_fields.hpp>
 #include <string_view>
 
 namespace coinbase_ticker_statistics {

@@ -1,7 +1,7 @@
-#include "output/csv_writer.hpp"
-#include "output/format_fields.hpp"
 #include "test_files.hpp"
 #include "test_result.hpp"
+#include <output/csv_writer.hpp>
+#include <output/format_fields.hpp>
 
 #include <gtest/gtest.h>
 
@@ -19,8 +19,8 @@
 namespace coinbase_ticker_statistics {
 namespace {
 
-constexpr std::string_view kHeader = "time,symbol,trade_id,trade_price,count,mean,median,low,high\n";
-constexpr std::string_view kRoundedRow = "2026-01-02T03:04:05.123456789Z,BTC-USD,42,1.25,2,1.5,1.5,1.25,1.75\n";
+constexpr std::string_view expected_header = "time,symbol,trade_id,trade_price,count,mean,median,low,high\n";
+constexpr std::string_view expected_row = "2026-01-02T03:04:05.123456789Z,BTC-USD,42,1.25,2,1.5,1.5,1.25,1.75\n";
 
 StatisticsUpdate sample_update() {
     const Timestamp exchange_time = std::chrono::sys_days{std::chrono::year{2026} / std::chrono::January / 2} +
@@ -35,7 +35,7 @@ TEST(CsvWriter, WritesExactHeaderExchangeTimeAndUnroundedPrices) {
     ASSERT_RESULT_OK(writer.write_header());
     ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
     ASSERT_RESULT_OK(writer.flush());
-    EXPECT_EQ(stream.str(), std::string(kHeader) + std::string(kRoundedRow));
+    EXPECT_EQ(stream.str(), std::string(expected_header) + std::string(expected_row));
 }
 
 TEST(CsvWriter, WritesAllAvailableFloatingPointDigits) {
@@ -43,9 +43,9 @@ TEST(CsvWriter, WritesAllAvailableFloatingPointDigits) {
     CsvWriter writer(stream);
     ASSERT_RESULT_OK(writer.write_header());
     auto event = sample_update();
-    event.trade.price = 12345.67890123456789L;
+    event.ticker_update.price = 12345.67890123456789L;
     ASSERT_RESULT_OK(writer.write_statistics(event));
-    ASSERT_RESULT_VALUE(price_text, format_price(event.trade.price));
+    ASSERT_RESULT_VALUE(price_text, format_price(event.ticker_update.price));
     EXPECT_NE(stream.str().find("," + price_text + ","), std::string::npos);
 }
 
@@ -54,10 +54,10 @@ TEST(CsvWriter, EscapesDelimiterQuotesAndLineEndings) {
     CsvWriter writer(stream);
     ASSERT_RESULT_OK(writer.write_header());
     auto event = sample_update();
-    event.trade.symbol = "BTC,\"USD\"\r\n";
+    event.ticker_update.symbol = "BTC,\"USD\"\r\n";
     ASSERT_RESULT_OK(writer.write_statistics(event));
     EXPECT_EQ(stream.str(),
-              std::string(kHeader) +
+              std::string(expected_header) +
                   "2026-01-02T03:04:05.123456789Z,\"BTC,\"\"USD\"\"\r\n\",42,1.25,2,1.5,1.5,1.25,1.75\n");
 }
 
@@ -68,20 +68,24 @@ TEST(CsvWriter, DoesNotDependOnTheBorrowedStreamsLocaleOrFormattingFlags) {
     CsvWriter writer(stream);
     ASSERT_RESULT_OK(writer.write_header());
     ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(stream.str(), std::string(kHeader) + std::string(kRoundedRow));
+    EXPECT_EQ(stream.str(), std::string(expected_header) + std::string(expected_row));
 }
 
-TEST(CsvWriter, EachRowIsVisibleBeforeShutdown) {
+TEST(CsvWriter, ExplicitFlushPublishesBufferedRows) {
     test::TemporaryDirectory directory;
     const auto path = directory.file("statistics.csv");
     std::ofstream stream(path);
     ASSERT_TRUE(stream);
     CsvWriter writer(stream);
     ASSERT_RESULT_OK(writer.write_header());
+    EXPECT_EQ(test::read_file(path), expected_header);
     ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(test::read_file(path), std::string(kHeader) + std::string(kRoundedRow));
+    ASSERT_RESULT_OK(writer.flush());
+    EXPECT_EQ(test::read_file(path), std::string(expected_header) + std::string(expected_row));
     ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(test::read_file(path), std::string(kHeader) + std::string(kRoundedRow) + std::string(kRoundedRow));
+    ASSERT_RESULT_OK(writer.flush());
+    EXPECT_EQ(test::read_file(path),
+              std::string(expected_header) + std::string(expected_row) + std::string(expected_row));
 }
 
 class CountingBuffer : public std::stringbuf {
@@ -94,78 +98,45 @@ class CountingBuffer : public std::stringbuf {
     bool fail_flush{};
 };
 
-TEST(CsvWriter, DiscardsInvalidRowAndReusesBufferWithoutAffectingBatchCount) {
+TEST(CsvWriter, DiscardsInvalidRowAndReusesBuffer) {
     CountingBuffer buffer;
     std::ostream stream(&buffer);
-    CsvWriter writer(stream, 2);
+    CsvWriter writer(stream);
     auto invalid = sample_update();
-    invalid.trade.symbol = std::string(1024, 'X');
+    invalid.ticker_update.symbol = std::string(1024, 'X');
     invalid.statistics.high = std::numeric_limits<Price>::infinity();
     ASSERT_RESULT_ERROR(writer.write_statistics(invalid), ErrorCode::InvalidInput);
     EXPECT_TRUE(buffer.str().empty());
     EXPECT_EQ(buffer.flushes, 0U);
     ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(buffer.str(), kRoundedRow);
+    EXPECT_EQ(buffer.str(), expected_row);
     EXPECT_EQ(buffer.flushes, 0U);
     ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(buffer.str(), std::string(kRoundedRow) + std::string(kRoundedRow));
-    EXPECT_EQ(buffer.flushes, 1U);
+    EXPECT_EQ(buffer.str(), std::string(expected_row) + std::string(expected_row));
+    EXPECT_EQ(buffer.flushes, 0U);
 }
 
 TEST(CsvWriter, PreservesFullWidthIntegerFields) {
     std::ostringstream stream;
     CsvWriter writer(stream);
     auto update = sample_update();
-    update.trade.trade_id = std::numeric_limits<TradeId>::max();
+    update.ticker_update.trade_id = std::numeric_limits<TradeId>::max();
     update.statistics.count = std::numeric_limits<SampleCount>::max();
     ASSERT_RESULT_OK(writer.write_statistics(update));
     const auto integer_fields =
-        "," + std::to_string(update.trade.trade_id) + ",1.25," + std::to_string(update.statistics.count) + ",";
+        "," + std::to_string(update.ticker_update.trade_id) + ",1.25," + std::to_string(update.statistics.count) + ",";
     EXPECT_NE(stream.str().find(integer_fields), std::string::npos);
 }
 
-TEST(CsvWriter, FlushesAtBatchBoundaryAndResetsAfterExplicitFlush) {
+TEST(CsvWriter, LeavesFlushPolicyToTheSink) {
     CountingBuffer buffer;
     std::ostream stream(&buffer);
-    CsvWriter writer(stream, 3);
-    ASSERT_RESULT_OK(writer.write_header());
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
+    CsvWriter writer(stream);
+    buffer.fail_flush = true;
     ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
     EXPECT_EQ(buffer.flushes, 0U);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
+    ASSERT_RESULT_ERROR(writer.flush(), ErrorCode::OutputIo);
     EXPECT_EQ(buffer.flushes, 1U);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    ASSERT_RESULT_OK(writer.flush());
-    EXPECT_EQ(buffer.flushes, 2U);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(buffer.flushes, 2U);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(buffer.flushes, 3U);
-}
-
-TEST(CsvWriter, BatchIsVisibleBeforeShutdownAndFinalPartialBatchIsFlushed) {
-    test::TemporaryDirectory directory;
-    const auto path = directory.file("statistics.csv");
-    std::ofstream stream(path);
-    CsvWriter writer(stream, 2);
-    ASSERT_RESULT_OK(writer.write_header());
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    EXPECT_EQ(test::read_file(path), std::string(kHeader) + std::string(kRoundedRow) + std::string(kRoundedRow));
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    ASSERT_RESULT_OK(writer.flush());
-    EXPECT_EQ(test::read_file(path),
-              std::string(kHeader) + std::string(kRoundedRow) + std::string(kRoundedRow) + std::string(kRoundedRow));
-}
-
-TEST(CsvWriter, ReportsBatchFlushFailure) {
-    CountingBuffer buffer;
-    std::ostream stream(&buffer);
-    CsvWriter writer(stream, 2);
-    ASSERT_RESULT_OK(writer.write_statistics(sample_update()));
-    buffer.fail_flush = true;
-    ASSERT_RESULT_ERROR(writer.write_statistics(sample_update()), ErrorCode::OutputIo);
 }
 
 TEST(CsvWriter, ReportsHeaderWriteFailure) {
@@ -192,7 +163,7 @@ TEST(CsvWriter, ReportsFlushFailure) {
 }
 
 #if defined(__linux__)
-TEST(CsvWriter, ReportsPerRowFlushFailureWhenDeviceIsFull) {
+TEST(CsvWriter, ReportsOutputFailureWhenDeviceIsFull) {
     std::ofstream full("/dev/full");
     ASSERT_TRUE(full);
     CsvWriter writer(full);
@@ -201,7 +172,11 @@ TEST(CsvWriter, ReportsPerRowFlushFailureWhenDeviceIsFull) {
         EXPECT_EQ(header.error().code, ErrorCode::OutputIo);
         return;
     }
-    ASSERT_RESULT_ERROR(writer.write_statistics(sample_update()), ErrorCode::OutputIo);
+    const auto written = writer.write_statistics(sample_update());
+    if (!written)
+        EXPECT_EQ(written.error().code, ErrorCode::OutputIo);
+    else
+        ASSERT_RESULT_ERROR(writer.flush(), ErrorCode::OutputIo);
 }
 #endif
 

@@ -1,8 +1,8 @@
-#include "output/format_fields.hpp"
 #include "test_result.hpp"
 #include <array>
 #include <gtest/gtest.h>
 #include <limits>
+#include <output/format_fields.hpp>
 #include <string_view>
 
 namespace coinbase_ticker_statistics {

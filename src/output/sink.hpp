@@ -1,8 +1,8 @@
 #pragma once
 
-#include "result.hpp"
+#include <result.hpp>
 
-#include "types.hpp"
+#include <types.hpp>
 
 #include <concepts>
 

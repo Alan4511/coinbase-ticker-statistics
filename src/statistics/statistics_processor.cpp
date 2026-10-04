@@ -1,4 +1,4 @@
-#include "app/statistics_processor.hpp"
+#include "statistics/statistics_processor.hpp"
 
 #include <utility>
 
@@ -22,6 +22,18 @@ Result<StatisticsProcessor> StatisticsProcessor::create(const Symbols &symbols, 
             return fail(ErrorCode::InvalidConfiguration, "symbols must be nonempty and unique");
     }
     return processor;
+}
+
+Result<std::optional<StatisticsUpdate>> StatisticsProcessor::on_update(const TickerUpdate &ticker_update) {
+    const auto window_position = windows_.find(ticker_update.symbol);
+    if (window_position == windows_.end())
+        return std::nullopt;
+    auto updated_statistics = window_position->second.add_update(ticker_update);
+    if (!updated_statistics)
+        return std::unexpected(std::move(updated_statistics.error()));
+    if (!*updated_statistics)
+        return std::nullopt;
+    return StatisticsUpdate{ticker_update, **updated_statistics};
 }
 
 } // namespace coinbase_ticker_statistics

@@ -1,4 +1,7 @@
-add_library(coinbase_ticker_statistics_statistics sliding_window.cpp)
+add_library(coinbase_ticker_statistics_statistics
+    sliding_window.cpp
+    statistics_processor.cpp
+)
 
 target_include_directories(coinbase_ticker_statistics_statistics PUBLIC
     "${PROJECT_SOURCE_DIR}/src"

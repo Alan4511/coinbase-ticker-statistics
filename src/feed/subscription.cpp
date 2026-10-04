@@ -27,7 +27,7 @@ bool is_valid_product_id(std::string_view symbol) {
 
 } // namespace
 
-Result<void> validate_subscription(const Symbols &symbols) {
+Result<void> validate_product_ids(const Symbols &symbols) {
     if (symbols.empty()) {
         return fail(ErrorCode::InvalidConfiguration, "ticker subscription requires at least one product ID");
     }
@@ -40,8 +40,8 @@ Result<void> validate_subscription(const Symbols &symbols) {
     return {};
 }
 
-Result<std::string> make_subscription(const Symbols &symbols) {
-    if (auto valid = validate_subscription(symbols); !valid)
+Result<std::string> encode_ticker_subscription(const Symbols &symbols) {
+    if (auto valid = validate_product_ids(symbols); !valid)
         return std::unexpected(valid.error());
     return Json{{protocol::type, protocol::subscribe},
                 {protocol::product_ids, symbols},

@@ -48,7 +48,7 @@ Result<TradeId> read_trade_id(const Json &document) {
 
 } // namespace
 
-Result<std::optional<Trade>> parse_ticker_message(std::string_view message) {
+Result<std::optional<TickerUpdate>> parse_ticker_message(std::string_view message) {
     // A readable DOM decoder costs allocations and throughput versus SAX/simdjson. Keeping it
     // behind this boundary lets the assignment favor auditability and replace it after profiling.
     // Discarded JSON is a normal validation result; malformed network data never uses exceptions.
@@ -89,7 +89,7 @@ Result<std::optional<Trade>> parse_ticker_message(std::string_view message) {
     if (!trade_id) {
         return std::unexpected(trade_id.error());
     }
-    return Trade{*exchange_time, std::string(*symbol), *trade_id, *price};
+    return TickerUpdate{*exchange_time, std::string(*symbol), *trade_id, *price};
 }
 
 } // namespace coinbase_ticker_statistics

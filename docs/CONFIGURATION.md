@@ -1,43 +1,26 @@
 # Configuration
 
 Pass JSON with `--config PATH`. [example.json](../config/example.json) shows all
-current options. `connections` (including each `symbols` array) and `output.path`
-are required. Other settings use the defaults listed below. Known fields have type/range
-validation; unknown keys are ignored and duplicate JSON keys use their last value.
-Full schema validation is deliberately outside this take-home implementation.
+current options. Root `symbols` and `output.path` are required. Other settings
+use the defaults below. Known fields have strict type/range validation; unknown
+keys are ignored and duplicate JSON keys use their last value.
 
 ## Minimal configuration
 
 ```json
 {
-  "connections": [{"symbols": ["BTC-USD", "ETH-USD", "SOL-USD"]}],
+  "symbols": ["BTC-USD", "ETH-USD", "SOL-USD"],
   "output": {"path": "../build/ticker_statistics.csv"}
 }
 ```
 
-Omitting a required field is an error. An empty string or empty connection group
-cannot substitute for it.
+## Symbols
 
-## Connections
+`symbols` must be a nonempty array of distinct product IDs such as `BTC-USD`.
+All products use one public ticker WebSocket; each has an independent window.
+There is no implicit subscription, authentication setting or connection grouping.
 
-```json
-{
-  "connections": [
-    {"symbols": ["BTC-USD"]},
-    {"symbols": ["ETH-USD", "SOL-USD"]}
-  ]
-}
-```
-
-Each entry creates a separate public ticker WebSocket using the shared `feed`
-settings. Groups must be nonempty; product IDs must be unique across all groups.
-There is no implicit symbol group: subscriptions must be supplied explicitly.
-All connections share one event loop and one set of independently owned symbol
-windows. A connection failure stops the complete run instead of silently
-continuing with an incomplete symbol set.
-
-The channel is always `ticker`; no authentication configuration exists.
-The former root-level `symbols` setting has been replaced by these groups.
+Older configurations must replace `connections` with the root `symbols` array.
 
 ## Feed
 
@@ -46,89 +29,88 @@ The former root-level `symbols` setting has been replaced by these groups.
 | `host` | `ws-feed.exchange.coinbase.com` | Host without scheme or port. |
 | `port` | `"443"` | Service/port string used by the resolver. |
 | `target` | `"/"` | WebSocket HTTP target, beginning with /. |
-| `connect_timeout_seconds` | `15` | DNS through subscription deadline. |
-| `close_timeout_seconds` | `5` | Graceful close deadline. |
-| `max_message_bytes` | `1048576` | Positive maximum incoming message size. |
+| `connect_timeout_seconds` | `15` | Integer in 1..31536000; deadline from DNS through subscription. |
+| `close_timeout_seconds` | `5` | Integer in 1..31536000; maximum WebSocket close time. |
+| `max_message_bytes` | `1048576` | Positive integer maximum incoming message size. |
 
-TLS certificate and hostname verification are mandatory. Trust comes from OpenSSL’s
-default trust store; there is no application setting for a custom CA file. A CA
-(Certificate Authority) is a trusted certificate issuer. Host, port and target
-remain configurable; a custom endpoint must present a certificate trusted by
-that default store. Host/port syntax is delegated to the networking library;
-there is no exhaustive DNS grammar validator.
+TLS certificate and hostname verification are mandatory, using OpenSSL's default
+trust store. Deployment-specific trust configuration belongs to the environment.
+Host/port syntax is delegated to the networking library. DNS, connection setup
+and reads are asynchronous on one event-loop thread. Connection and close
+deadlines are enforced; there is no idle-feed timeout.
 
 ## Window
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `duration_seconds` | `300` | Positive integer; use 3600 for one hour. |
+| `duration_seconds` | `300` | Integer in 1..31536000; use 3600 for one hour. |
 
-Window time always comes from Coinbase. Membership is always `(t-duration,t]`;
-the lower boundary is open. Equal timestamps are valid; decreasing timestamps
-fail explicitly before duplicate checking. Retained duplicate trade IDs are
-always ignored, considering the candidate window after prospective expiration.
-Ignored duplicates do not mutate state, advance time, or emit rows. IDs are
-forgotten after expiration. All accepted samples are retained until expiration;
-there is no sample-count cap. Memory depends on arrival rate and window duration.
-Idle windows expire on the next event. The removed `max_observations_per_symbol`
-key has no effect if left in an older configuration, like other unknown keys.
+Window membership is `(t-duration,t]`, using each symbol's exchange time. Equal
+timestamps are valid; decreasing timestamps fail before duplicate checking.
+Retained duplicate trade IDs are ignored, considering prospective expiration;
+ignored duplicates do not mutate state, advance time or emit rows. IDs are
+forgotten after expiration. Idle windows expire on the next accepted event.
 
-Prices/statistics use long double and full round-trip CSV precision. There are
-no fixed-point scale, decimal-place, or rounding-mode settings; see the
-[README numeric tradeoff](../README.md#numeric-model-and-tradeoffs).
-Mean weights each accepted ticker equally, not by volume or elapsed time.
-
-## Process lifetime and malformed messages
-
-Malformed messages, Coinbase error messages and processing/output failures stop
-the run. Unrelated valid message types are ignored. This fail-fast behavior
-makes data problems visible instead of silently producing incomplete statistics.
-
-The process runs until SIGINT or SIGTERM requests bounded graceful shutdown. There is no configured run duration or event-count limit.
+All accepted samples remain until expiration. There is no sample-count cap;
+memory depends on arrival rate and window duration. The old
+`max_observations_per_symbol` key has no effect. Mean weights each ticker equally,
+not by volume or elapsed time. Prices/statistics use `long double`, with no
+scale or rounding settings; see the [numeric tradeoff](DESIGN_DECISIONS.md#numeric-model-and-tradeoffs).
 
 ## Output
 
-One `output` object configures the CSV writer, for example
-`"output": {"path": "../build/ticker_statistics.csv"}`. Alternative sink types are
-selected in code through the sink concept; there is no runtime sink registry.
+`output.path` is a required nonempty path, absolute or relative to the configuration
+file's directory. Parent directories are created automatically. Every run replaces
+existing content; use separate paths to retain previous runs. Window validation
+and connection/subscription complete before the destination is opened.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `path` | Required; no default | Nonempty path, relative to configuration directory or absolute. |
-| `flush_every_rows` | `1` | Positive integer. 1 publishes each row; larger values batch rows across all symbols. |
-| `flush_interval_ms` | `1000` | Integer in 1..86400000; periodic flush interval when batching. |
+| `flush_every_rows` | `100` | Positive integer; flush after this many rows across all symbols. Set `1` for immediate flushing. |
+| `flush_interval_ms` | `250` | Integer in 1..31536000000; flush a partial batch after this many milliseconds from its first row. |
 
-Parent directories are created automatically. Every run writes a fresh file,
-replacing existing content. Append mode is not supported. Use different paths to retain separate runs.
+The header is flushed immediately. Rows flush when the count or interval is
+reached, whichever comes first; additional rows do not postpone the deadline.
+The timer runs even when the feed is idle, and shutdown flushes any remaining
+rows. The stream may publish data earlier when its internal buffer fills.
 
-Window/routing validation and local connection configuration complete before the
-destination is opened. These startup failures preserve an existing file; network
-failures after opening can still leave a fresh partial output.
+Flushing still uses synchronous I/O on the event loop. Slow processing/writes can
+delay the timer, so its interval is a scheduling bound rather than a hard
+real-time guarantee. Batching reduces explicit flush frequency but delays
+visibility and potentially detection of output errors. A timed flush failure
+stops the feed and yields a failure exit status. Flush does not guarantee disk
+durability; abrupt termination can lose buffered rows.
 
-CSV columns are `time,symbol,trade_id,trade_price,count,mean,median,low,high`.
-Time is UTC exchange time with nine fractional digits. Floating-point numbers
-use max_digits10 significant digits, possibly scientific notation, independently
-of the stream locale. The delimiter is always a comma; fields with commas,
-quotes or newlines are escaped.
+The application handler currently uses `CsvSink`. Another output destination
+requires changing that wiring; `OutputSink` documents the delivery contract,
+but does not provide a runtime sink registry or a configurable sink factory.
 
-The sink receives borrowed events synchronously. With `flush_every_rows: 1`,
-each row is flushed for immediate visibility. For batches, set a larger threshold:
+Columns are `time,symbol,trade_id,trade_price,count,mean,median,low,high`.
+Time is UTC exchange time with nine fractional digits. Numbers use `max_digits10`
+significant digits, possibly scientific notation, independent of the stream locale.
+The delimiter is a comma; quotes, commas and line endings are escaped.
 
-```json
-"output": {
-  "path": "../build/ticker_statistics.csv",
-  "flush_every_rows": 128,
-  "flush_interval_ms": 1000
-}
-```
+## Process lifetime and malformed messages
 
-Rows are written as observations arrive; flushing occurs at the row threshold
-or the periodic timer, whichever comes first. Each successful flush resets the
-row counter. The timer runs on the existing event loop and flushes even when
-no new ticker arrives. The stream can also publish earlier when its buffer fills.
-The interval is a scheduling target, not a hard latency bound: synchronous I/O
-or busy callbacks can delay it. It is ignored in per-row mode.
+Malformed data, Coinbase error messages and processing/output failures stop the
+run. Unrelated valid message types are ignored. A normal peer close ends the run
+successfully; unexpected transport failures return an error. There is no reconnect.
 
-Batching reduces flush overhead but delays visibility and detection of buffered
-I/O failures. Write/flush failures stop the application. Shutdown flushes any
-remaining partial batch. Flush does not guarantee durability on disk.
+Ctrl-C/SIGTERM stops processing and attempts a normal WebSocket close. If the peer
+responds, the application flushes CSV, logs the reason and final counts, and exits
+successfully. If closing fails or exceeds `close_timeout_seconds`, the transport
+is closed forcibly, CSV is still flushed and an error is reported with a failure
+exit status. During connection setup, the signal cancels pending operations
+without opening the output file. No unsubscribe is needed when closing a connection.
+
+Signals and deadlines run on the same event loop as processing, so synchronous
+CSV I/O can delay them; the deadlines are scheduling bounds, not hard real-time
+guarantees. SIGKILL and process crashes bypass cleanup. There is no configured
+run duration or event-count limit.
+
+Startup, shutdown and error messages share stderr. Redirect it with
+`2> application.log` to capture both INFO and ERROR records in one file. The final
+summary includes received-message, decoded-ticker and emitted-row counts; there
+are no periodic or per-ticker diagnostic messages. CSV output uses its own file.
+Emitted-row counts include successful writes into the buffer; they do not prove
+that every row reached the file when a later flush fails.

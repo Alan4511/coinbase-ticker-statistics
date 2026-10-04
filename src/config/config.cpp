@@ -1,12 +1,12 @@
 #include "config/config.hpp"
-#include "feed/subscription.hpp"
+#include <feed/subscription.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <concepts>
 #include <fstream>
 #include <iterator>
-#include <ranges>
 #include <set>
 #include <utility>
 
@@ -17,7 +17,6 @@ using Json = nlohmann::json;
 
 namespace key {
 constexpr auto symbols = "symbols";
-constexpr auto connections = "connections";
 constexpr auto feed = "feed";
 constexpr auto window = "window";
 constexpr auto output = "output";
@@ -78,8 +77,8 @@ Result<T> decode_config_value(const Json &value, const char *name) {
     }
     else if constexpr (std::same_as<T, Duration> || std::same_as<T, std::chrono::milliseconds>) {
         return decode_config_value<std::uint64_t>(value, name).and_then([invalid_field](auto count) -> Result<T> {
-            constexpr auto maximum = std::same_as<T, Duration> ? maximum_duration_seconds : 86'400'000ULL;
-            if (count == 0 || count > maximum)
+            const auto maximum_count = std::chrono::duration_cast<T>(Duration{maximum_duration_seconds}).count();
+            if (count == 0 || count > static_cast<std::uint64_t>(maximum_count))
                 return invalid_field("duration must be positive and within the supported range");
             return T{count};
         });
@@ -111,35 +110,20 @@ Result<void> apply_setting_override(const Json &object, const char *name, T &des
     return {};
 }
 
-Result<Connections> read_connections(const Json &connection_groups) {
-    if (!connection_groups.is_array() || connection_groups.empty()) {
-        return fail(ErrorCode::InvalidConfiguration, "connections must be a nonempty array");
+Result<Symbols> read_symbols(const Json &products) {
+    if (!products.is_array() || products.empty())
+        return fail(ErrorCode::InvalidConfiguration, "symbols must be a nonempty array");
+    Symbols symbols;
+    for (const auto &product : products) {
+        auto symbol = decode_config_value<Symbol>(product, key::symbols);
+        if (!symbol)
+            return std::unexpected(symbol.error());
+        symbols.push_back(std::move(*symbol));
     }
-    Connections connections;
-    std::set<Symbol> subscribed_symbols;
-    for (const auto &item : connection_groups) {
-        const auto products = item.find(key::symbols);
-        if (products == item.end() || !products->is_array()) {
-            return fail(ErrorCode::InvalidConfiguration, "each connection requires a symbols array");
-        }
-        Symbols symbols;
-        for (const auto &product_id : *products) {
-            if (!product_id.is_string() || product_id.get_ref<const Symbol &>().empty())
-                return fail(ErrorCode::InvalidConfiguration, "symbols must be nonempty strings");
-            const auto &symbol = product_id.get_ref<const Symbol &>();
-            const auto [symbol_position, is_new_symbol] = subscribed_symbols.insert(symbol);
-            if (!is_new_symbol)
-                return fail(ErrorCode::InvalidConfiguration, "symbols must be unique across connections");
-            symbols.push_back(*symbol_position);
-        }
-        if (auto valid = validate_subscription(symbols); !valid)
-            return std::unexpected(valid.error());
-        connections.push_back({std::move(symbols)});
-    }
-    return connections;
+    return symbols;
 }
 
-Result<FeedConfig> read_feed(const Json &root) {
+Result<FeedConfig> read_feed_config(const Json &root) {
     auto object = read_config_section(root, key::feed);
     if (!object)
         return std::unexpected(object.error());
@@ -156,12 +140,10 @@ Result<FeedConfig> read_feed(const Json &root) {
         return std::unexpected(result.error());
     if (auto result = apply_setting_override(*object, key::max_message_bytes, feed.max_message_bytes); !result)
         return std::unexpected(result.error());
-    if (feed.max_message_bytes == 0 || feed.target.front() != '/')
-        return fail(ErrorCode::InvalidConfiguration, "message size must be positive and target must start with /");
     return feed;
 }
 
-Result<WindowOptions> read_window(const Json &root) {
+Result<WindowOptions> read_window_options(const Json &root) {
     auto object = read_config_section(root, key::window);
     if (!object)
         return std::unexpected(object.error());
@@ -171,7 +153,7 @@ Result<WindowOptions> read_window(const Json &root) {
     return window;
 }
 
-Result<CsvConfig> read_output(const Json &root) {
+Result<CsvConfig> read_csv_config(const Json &root) {
     auto object = read_field<Json>(root, key::output);
     if (!object)
         return std::unexpected(object.error());
@@ -185,35 +167,48 @@ Result<CsvConfig> read_output(const Json &root) {
         return std::unexpected(result.error());
     if (auto result = apply_setting_override(*object, key::flush_interval_ms, output.flush_interval); !result)
         return std::unexpected(result.error());
-    if (output.flush_every_rows == 0)
-        return fail(ErrorCode::InvalidConfiguration, "flush_every_rows must be positive");
     return output;
 }
 
 } // namespace
 
-Symbols Config::symbols() const {
-    const auto symbol_groups = connections | std::views::transform(&ConnectionConfig::symbols);
-    return symbol_groups | std::views::join | std::ranges::to<Symbols>();
+Result<void> validate_config(const Config &config) {
+    if (auto valid = validate_product_ids(config.symbols); !valid)
+        return valid;
+    std::set<Symbol> subscribed_symbols;
+    for (const auto &symbol : config.symbols) {
+        if (!subscribed_symbols.insert(symbol).second)
+            return fail(ErrorCode::InvalidConfiguration, "symbols must be unique");
+    }
+    if (auto valid = validate_feed_config(config.feed); !valid)
+        return valid;
+    if (auto valid = validate_window_options(config.window); !valid)
+        return valid;
+    if (config.window.duration > Duration{maximum_duration_seconds})
+        return fail(ErrorCode::InvalidConfiguration, "window.duration_seconds must be between 1 and 31536000");
+    return validate_csv_config(config.output);
 }
 
 Result<Config> parse_config(std::string_view text) {
     const auto document = Json::parse(text, nullptr, false);
     if (document.is_discarded() || !document.is_object())
         return fail(ErrorCode::InvalidConfiguration, "expected a valid JSON configuration object");
-    auto connections = read_field<Json>(document, key::connections).and_then(read_connections);
-    if (!connections)
-        return std::unexpected(connections.error());
-    auto feed = read_feed(document);
+    auto symbols = read_field<Json>(document, key::symbols).and_then(read_symbols);
+    if (!symbols)
+        return std::unexpected(symbols.error());
+    auto feed = read_feed_config(document);
     if (!feed)
         return std::unexpected(feed.error());
-    auto window = read_window(document);
+    auto window = read_window_options(document);
     if (!window)
         return std::unexpected(window.error());
-    auto output = read_output(document);
+    auto output = read_csv_config(document);
     if (!output)
         return std::unexpected(output.error());
-    return Config{std::move(*connections), std::move(*feed), *window, std::move(*output)};
+    Config config{std::move(*symbols), std::move(*feed), *window, std::move(*output)};
+    if (auto valid = validate_config(config); !valid)
+        return std::unexpected(std::move(valid.error()));
+    return config;
 }
 
 Result<Config> load_config(const std::filesystem::path &path) {
