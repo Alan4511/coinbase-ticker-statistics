@@ -29,27 +29,32 @@ struct CountingSink {
 };
 
 struct LifecycleRecorder {
+    RunControl control{[] {
+    }};
+    ExecutionContext context{control};
     unsigned connected{};
     Result<void> ready_result;
     std::optional<Result<void>> completion;
+
+    Result<void> on_connected(ExecutionContext &received_context) {
+        EXPECT_EQ(&received_context, &context);
+        ++connected;
+        return ready_result;
+    }
+    void on_stopped(ExecutionContext &received_context, Result<void> result) {
+        EXPECT_EQ(&received_context, &context);
+        completion = std::move(result);
+    }
 };
 
 static_assert(OutputSink<RecordingSink>);
 static_assert(OutputSink<CountingSink>);
-static_assert(FeedHandler<ApplicationFeedHandler<RecordingSink>>);
-static_assert(FeedHandler<ApplicationFeedHandler<CountingSink>>);
+static_assert(FeedHandler<ApplicationFeedHandler<RecordingSink, LifecycleRecorder>>);
+static_assert(FeedHandler<ApplicationFeedHandler<CountingSink, LifecycleRecorder>>);
 
 template <OutputSink Sink>
 auto handler_for(Sink &sink, LifecycleRecorder &lifecycle) {
-    return ApplicationFeedHandler{StatisticsProcessor::create({"BTC-USD", "ETH-USD"}, {}).value(),
-                                  sink,
-                                  [&lifecycle] {
-                                      ++lifecycle.connected;
-                                      return lifecycle.ready_result;
-                                  },
-                                  [&lifecycle](Result<void> completion) {
-                                      lifecycle.completion = std::move(completion);
-                                  }};
+    return ApplicationFeedHandler{StatisticsProcessor::create({"BTC-USD", "ETH-USD"}, {}).value(), sink, lifecycle};
 }
 
 TickerUpdate update(TradeId id, Price price, Symbol symbol = "BTC-USD", Timestamp time = Timestamp{}) {
@@ -60,9 +65,9 @@ TEST(ApplicationFeedHandler, RoutesIndependentSymbolStatisticsToASinkWithoutCsvL
     RecordingSink sink;
     LifecycleRecorder lifecycle;
     auto handler = handler_for(sink, lifecycle);
-    ASSERT_RESULT_OK(handler.on_message(update(1, 10)));
-    ASSERT_RESULT_OK(handler.on_message(update(2, 20)));
-    ASSERT_RESULT_OK(handler.on_message(update(1, 100, "ETH-USD")));
+    ASSERT_RESULT_OK(handler.on_message(lifecycle.context, update(1, 10)));
+    ASSERT_RESULT_OK(handler.on_message(lifecycle.context, update(2, 20)));
+    ASSERT_RESULT_OK(handler.on_message(lifecycle.context, update(1, 100, "ETH-USD")));
     ASSERT_EQ(sink.updates.size(), 3U);
     EXPECT_EQ(sink.updates[1].statistics.count, 2U);
     EXPECT_EQ(sink.updates[1].statistics.mean, 15);
@@ -77,9 +82,9 @@ TEST(ApplicationFeedHandler, SupportsAnotherSinkAndFiltersDuplicatesAndUnsubscri
     CountingSink sink;
     LifecycleRecorder lifecycle;
     auto handler = handler_for(sink, lifecycle);
-    ASSERT_RESULT_OK(handler.on_message(update(1, 10)));
-    ASSERT_RESULT_OK(handler.on_message(update(1, 10)));
-    ASSERT_RESULT_OK(handler.on_message(update(1, 10, "SOL-USD")));
+    ASSERT_RESULT_OK(handler.on_message(lifecycle.context, update(1, 10)));
+    ASSERT_RESULT_OK(handler.on_message(lifecycle.context, update(1, 10)));
+    ASSERT_RESULT_OK(handler.on_message(lifecycle.context, update(1, 10, "SOL-USD")));
     EXPECT_EQ(sink.count, 1U);
     EXPECT_EQ(handler.emitted_rows(), 1U);
 }
@@ -89,7 +94,7 @@ TEST(ApplicationFeedHandler, PropagatesSinkFailureWithoutCountingDeliveryOrDecid
     sink.result = fail(ErrorCode::OutputIo, "sink rejected update");
     LifecycleRecorder lifecycle;
     auto handler = handler_for(sink, lifecycle);
-    const auto result = handler.on_message(update(1, 10));
+    const auto result = handler.on_message(lifecycle.context, update(1, 10));
     ASSERT_RESULT_ERROR(result, ErrorCode::OutputIo);
     EXPECT_EQ(result.error().message, "sink rejected update");
     EXPECT_TRUE(sink.updates.empty());
@@ -101,21 +106,22 @@ TEST(ApplicationFeedHandler, PropagatesStatisticsFailureWithoutCallingTheSink) {
     RecordingSink sink;
     LifecycleRecorder lifecycle;
     auto handler = handler_for(sink, lifecycle);
-    ASSERT_RESULT_OK(handler.on_message(update(1, 10, "BTC-USD", Timestamp{std::chrono::seconds{1}})));
-    ASSERT_RESULT_ERROR(handler.on_message(update(2, 20)), ErrorCode::OutOfOrderTimestamp);
+    ASSERT_RESULT_OK(
+        handler.on_message(lifecycle.context, update(1, 10, "BTC-USD", Timestamp{std::chrono::seconds{1}})));
+    ASSERT_RESULT_ERROR(handler.on_message(lifecycle.context, update(2, 20)), ErrorCode::OutOfOrderTimestamp);
     EXPECT_EQ(sink.updates.size(), 1U);
     EXPECT_EQ(handler.emitted_rows(), 1U);
     EXPECT_FALSE(lifecycle.completion);
 }
 
-TEST(ApplicationFeedHandler, ReportsLifecycleEventsToItsApplicationCallbacks) {
+TEST(ApplicationFeedHandler, ReportsLifecycleEventsWithTheSameApplicationContext) {
     CountingSink sink;
     LifecycleRecorder lifecycle;
     lifecycle.ready_result = fail(ErrorCode::FileIo, "application startup failed");
     auto handler = handler_for(sink, lifecycle);
-    ASSERT_RESULT_ERROR(handler.on_connected(), ErrorCode::FileIo);
+    ASSERT_RESULT_ERROR(handler.on_connected(lifecycle.context), ErrorCode::FileIo);
     EXPECT_EQ(lifecycle.connected, 1U);
-    handler.on_stopped(fail(ErrorCode::Transport, "peer failed"));
+    handler.on_stopped(lifecycle.context, fail(ErrorCode::Transport, "peer failed"));
     ASSERT_TRUE(lifecycle.completion);
     ASSERT_RESULT_ERROR(*lifecycle.completion, ErrorCode::Transport);
     EXPECT_EQ(lifecycle.completion->error().message, "peer failed");

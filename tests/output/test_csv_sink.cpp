@@ -7,7 +7,6 @@
 #include <chrono>
 #include <csignal>
 #include <limits>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <sys/wait.h>
@@ -24,17 +23,16 @@ StatisticsUpdate sample_update() {
     return {{Timestamp{}, "BTC-USD", 42, 1.25L}, {1, 1.25L, 1.25L, 1.25L, 1.25L}};
 }
 
-void report_flush_error(Error error) {
-    ADD_FAILURE() << error.message;
-}
-
 TEST(CsvSink, ImmediateModePublishesRowsBeforeClose) {
     test::TemporaryDirectory directory;
     CsvConfig config{directory.file("nested/statistics.csv")};
     config.flush_every_rows = 1;
     boost::asio::io_context io;
-    CsvSink sink(io, config);
-    sink.set_flush_error_handler(report_flush_error);
+    RunControl control([] {
+        ADD_FAILURE() << "unexpected asynchronous flush failure";
+    });
+    ExecutionContext context(control);
+    CsvSink sink(io, config, context);
     ASSERT_RESULT_OK(sink.close());
     ASSERT_RESULT_OK(sink.open());
     EXPECT_EQ(test::read_file(config.path), header);
@@ -52,8 +50,11 @@ TEST(CsvSink, RowThresholdFlushesAndCancelledWaitDoesNotFlushNextBatch) {
     config.flush_every_rows = 2;
     config.flush_interval = 30s;
     boost::asio::io_context io;
-    CsvSink sink(io, config);
-    sink.set_flush_error_handler(report_flush_error);
+    RunControl control([] {
+        ADD_FAILURE() << "unexpected asynchronous flush failure";
+    });
+    ExecutionContext context(control);
+    CsvSink sink(io, config, context);
     ASSERT_RESULT_OK(sink.open());
     ASSERT_RESULT_OK(sink.write_statistics(sample_update()));
     EXPECT_EQ(test::read_file(config.path), header);
@@ -74,8 +75,11 @@ TEST(CsvSink, TimerPublishesPartialBatchWithoutAnotherUpdate) {
     CsvConfig config{directory.file("statistics.csv")};
     config.flush_interval = 20ms;
     boost::asio::io_context io;
-    CsvSink sink(io, config);
-    sink.set_flush_error_handler(report_flush_error);
+    RunControl control([] {
+        ADD_FAILURE() << "unexpected asynchronous flush failure";
+    });
+    ExecutionContext context(control);
+    CsvSink sink(io, config, context);
     ASSERT_RESULT_OK(sink.open());
     ASSERT_RESULT_OK(sink.write_statistics(sample_update()));
     EXPECT_EQ(test::read_file(config.path), header);
@@ -89,8 +93,11 @@ TEST(CsvSink, AdditionalRowsDoNotPostponeTheFirstRowsDeadline) {
     CsvConfig config{directory.file("statistics.csv")};
     config.flush_interval = 100ms;
     boost::asio::io_context io;
-    CsvSink sink(io, config);
-    sink.set_flush_error_handler(report_flush_error);
+    RunControl control([] {
+        ADD_FAILURE() << "unexpected asynchronous flush failure";
+    });
+    ExecutionContext context(control);
+    CsvSink sink(io, config, context);
     ASSERT_RESULT_OK(sink.open());
     ASSERT_RESULT_OK(sink.write_statistics(sample_update()));
     boost::asio::steady_timer next_update(io, 50ms);
@@ -112,8 +119,11 @@ TEST(CsvSink, CloseFlushesPartialBatchAndCancelsLongTimer) {
     CsvConfig config{directory.file("statistics.csv")};
     config.flush_interval = 30s;
     boost::asio::io_context io;
-    CsvSink sink(io, config);
-    sink.set_flush_error_handler(report_flush_error);
+    RunControl control([] {
+        ADD_FAILURE() << "unexpected asynchronous flush failure";
+    });
+    ExecutionContext context(control);
+    CsvSink sink(io, config, context);
     ASSERT_RESULT_OK(sink.open());
     ASSERT_RESULT_OK(sink.write_statistics(sample_update()));
     ASSERT_RESULT_OK(sink.close());
@@ -127,8 +137,11 @@ TEST(CsvSink, InvalidRowsDoNotCountTowardsTheBatch) {
     CsvConfig config{directory.file("statistics.csv")};
     config.flush_every_rows = 2;
     boost::asio::io_context io;
-    CsvSink sink(io, config);
-    sink.set_flush_error_handler(report_flush_error);
+    RunControl control([] {
+        ADD_FAILURE() << "unexpected asynchronous flush failure";
+    });
+    ExecutionContext context(control);
+    CsvSink sink(io, config, context);
     ASSERT_RESULT_OK(sink.open());
     auto invalid = sample_update();
     invalid.statistics.high = std::numeric_limits<Price>::infinity();
@@ -146,8 +159,11 @@ TEST(CsvSink, RejectsSecondOpenWithoutTruncatingPublishedRows) {
     CsvConfig config{directory.file("statistics.csv")};
     config.flush_every_rows = 1;
     boost::asio::io_context io;
-    CsvSink sink(io, config);
-    sink.set_flush_error_handler(report_flush_error);
+    RunControl control([] {
+        ADD_FAILURE() << "unexpected asynchronous flush failure";
+    });
+    ExecutionContext context(control);
+    CsvSink sink(io, config, context);
     ASSERT_RESULT_OK(sink.open());
     ASSERT_RESULT_OK(sink.write_statistics(sample_update()));
     ASSERT_RESULT_ERROR(sink.open(), ErrorCode::InvalidState);
@@ -161,22 +177,15 @@ TEST(CsvSink, ReportsDirectoryAndFileOpeningErrors) {
     test::write_file(file_path, "previous run\n");
     boost::asio::io_context io;
     for (const auto &path : {file_path / "statistics.csv", file_path.parent_path()}) {
-        CsvSink sink(io, CsvConfig{path});
-        sink.set_flush_error_handler(report_flush_error);
+        RunControl control([] {
+            ADD_FAILURE() << "unexpected asynchronous flush failure";
+        });
+        ExecutionContext context(control);
+        CsvSink sink(io, CsvConfig{path}, context);
         ASSERT_RESULT_ERROR(sink.open(), ErrorCode::FileIo);
         ASSERT_RESULT_OK(sink.close());
     }
     EXPECT_EQ(test::read_file(file_path), "previous run\n");
-}
-
-TEST(CsvSink, RequiresAnErrorHandlerBeforeOpeningTheFile) {
-    test::TemporaryDirectory directory;
-    CsvConfig config{directory.file("existing.csv")};
-    test::write_file(config.path, "previous run\n");
-    boost::asio::io_context io;
-    CsvSink sink(io, config);
-    ASSERT_RESULT_ERROR(sink.open(), ErrorCode::InvalidConfiguration);
-    EXPECT_EQ(test::read_file(config.path), "previous run\n");
 }
 
 TEST(CsvSink, TimedFlushReportsOutputFailureWithoutAnotherUpdate) {
@@ -190,16 +199,20 @@ TEST(CsvSink, TimedFlushReportsOutputFailureWithoutAnotherUpdate) {
         if (!test::limit_child_file_size(header.size()))
             ::_exit(2);
         boost::asio::io_context io;
-        std::optional<Error> flush_error;
-        CsvSink sink(io, config);
-        sink.set_flush_error_handler([&flush_error](Error error) {
-            flush_error = std::move(error);
+        unsigned stop_requests{};
+        RunControl control([&stop_requests] {
+            ++stop_requests;
         });
+        ExecutionContext context(control);
+        CsvSink sink(io, config, context);
         if (!sink.open() || !sink.write_statistics(sample_update()))
             ::_exit(3); // The row must be buffered successfully before the timer fails.
         io.run();
         const auto closed = sink.close();
-        ::_exit(flush_error && flush_error->code == ErrorCode::OutputIo && !closed ? 0 : 4);
+        ::_exit(!control.result() && control.result().error().code == ErrorCode::OutputIo && stop_requests == 1 &&
+                        !closed
+                    ? 0
+                    : 4);
     }
     int status{};
     ASSERT_EQ(::waitpid(child, &status, 0), child);

@@ -1,508 +1,339 @@
-Refactor the current Coinbase ticker statistics project with a focus on ownership, lifecycle separation, real extensibility, and removing redundant validation. Treat this as production-quality code within the explicit assignment scope, but do not add out-of-scope operational features such as reconnect/backoff, heartbeat monitoring, sequence recovery, stale-feed watchdogs, worker pools, or crash-durability machinery.
+## Goal
 
-The existing statistics core and the `FeedConnection` / `TickerFeed` separation are already coherent. Make meaningful architectural changes where they improve ownership, separation of concerns, failure propagation, or future extensibility, but avoid unrelated rewrites and speculative abstractions.
+Refactor the current application lifecycle plumbing so that application-wide execution concerns are passed through a narrow execution context rather than through multiple ad-hoc `std::function` callbacks.
 
-## 1. Make configuration ownership explicit
-
-The `config` module should own parsing and validation of application configuration.
-
-The normal executable flow is already:
+The purpose is to simplify lifecycle/error propagation while preserving the existing separation of concerns:
 
 ```text
-main
-  -> load_config()
-  -> parse_config()
-  -> validate_config()
-  -> run_application(valid config)
+Application
+  ├─ TickerFeed -> FeedConnection
+  ├─ StatisticsProcessor
+  └─ OutputSink -> CsvSink
 ```
 
-Therefore:
+The refactor should not change the domain architecture or make synchronous modules artificially asynchronous.
 
-- remove the redundant `validate_config(config)` call from `run_application()`,
-- define the contract of `run_application()` as requiring a validated `Config`,
-- document that `Config` values obtained from `load_config()` / `parse_config()` satisfy that precondition,
-- keep all configuration validation rules in the `config` module,
-- keep `validate_config()` as the composition-level validation function that may call validation helpers from owning modules such as:
-  - symbol/subscription validation,
-  - `validate_feed_config`,
-  - `validate_window_options`,
-  - `validate_csv_config`.
+## Current problem
 
-Do not move module-specific validation logic into `application.cpp`.
+The current code already has good subsystem boundaries, but application lifecycle concerns are spread across several callback paths.
 
-The desired boundary is:
+Examples include:
 
-```text
-config module
-  parses + validates + resolves config
-        |
-        v
-     valid Config
-        |
-        v
-application module
-  consumes config only
-```
+- `ApplicationFeedHandler` stores `on_connected` and `on_stopped` callbacks.
+- `CsvSink` stores a flush-error callback configured via `set_flush_error_handler()`.
+- `application.cpp` owns `RunState`, signal handling, feed shutdown policy, sink cleanup, and conversion of output errors into `feed.stop()`.
 
-If tests directly construct `Config` and call `run_application()`, update those tests/helpers so they construct valid configs rather than relying on `run_application()` to validate them.
+This is functionally correct, but lifecycle policy is represented through several independent callback relationships.
 
----
+In particular, asynchronous CSV flush failures require a separate callback because the failure may occur after `write_statistics()` has returned.
 
-## 2. Keep and strengthen the OutputSink abstraction
+## Proposed model
 
-Retain `sink.hpp`.
+Introduce a narrow application-owned execution/lifecycle context that can be passed through event-processing paths.
 
-The sink abstraction is intentional because the output destination may later change without touching statistics logic.
+The context should represent cross-cutting execution capabilities, not application dependencies.
 
-Desired extension model:
-
-```text
-StatisticsUpdate
-      |
-      v
-  OutputSink
-    |   |   |
-    |   |   +-- future DatabaseSink
-    |   +------ future BrokerSink
-    +---------- CsvSink
-```
-
-Keep the common sink contract narrow, ideally just the operation needed by the event-processing path:
+Conceptually:
 
 ```cpp
-template <typename Sink>
-concept OutputSink = requires(
-    Sink& sink,
-    const StatisticsUpdate& update
-) {
-    { sink.write_statistics(update) }
-        -> std::same_as<Result<void>>;
+class ExecutionContext {
+public:
+    Logger& logger() noexcept;
+
+    void fail(Error error);
+    void request_stop(std::string_view reason);
+
+    [[nodiscard]] bool stopping() const noexcept;
+
+private:
+    // Application-owned state/control only.
 };
 ```
 
-Do not force CSV-specific lifecycle operations such as `open`, `flush`, file paths, timers, or `close` into the common concept unless they are genuinely common to all sinks.
+The context must not become a service locator.
 
-Prefer compile-time polymorphism rather than introducing a virtual base class.
+Do not put objects such as these directly into it:
 
----
+```cpp
+TickerFeed&
+CsvSink&
+StatisticsProcessor&
+Config&
+boost::asio::signal_set&
+```
 
-## 3. Make ApplicationFeedHandler genuinely sink-agnostic
+Statistics, output sinks, feeds, and configuration should remain explicit dependencies owned by their existing layers.
 
-`ApplicationFeedHandler` currently depends directly on `CsvSink`.
+## Intended event flow
 
-Refactor it so it depends on the `OutputSink` contract instead.
+Prefer event handlers of the form:
 
-Preferred direction:
+```cpp
+handler.on_connected(ctx);
+handler.on_message(ctx, update);
+handler.on_stopped(ctx, completion);
+```
+
+and, where useful:
+
+```cpp
+sink.write_statistics(ctx, statistics_update);
+```
+
+The context should carry lifecycle/error-reporting capability through the event pipeline.
+
+The handler should continue to own or explicitly reference its actual processing dependencies:
 
 ```cpp
 template <OutputSink Sink>
 class ApplicationFeedHandler {
-public:
-    ApplicationFeedHandler(
-        StatisticsProcessor processor,
-        Sink& sink,
-        ...
-    );
-
-private:
     StatisticsProcessor processor_;
     Sink& sink_;
 };
 ```
 
-Current production wiring should naturally use:
+Do not move `StatisticsProcessor` or `Sink` into `ExecutionContext`.
+
+## Async output errors
+
+Keep the current buffered/timed CSV flush design.
+
+Do not replace timed/threshold flushing with flush-per-row merely to simplify error handling.
+
+A successful:
 
 ```cpp
-ApplicationFeedHandler<CsvSink>
+write_statistics(...)
 ```
 
-A future sink such as `BrokerSink` should require only changing composition/wiring, not statistics processing logic.
+can only report failures that occur synchronously during that call.
 
-Do not introduce runtime polymorphism unless the application actually needs runtime-selectable sink types.
+A timer-triggered flush may fail later, after the originating call has returned, so that failure still requires an asynchronous reporting path.
 
----
-
-## 4. Move application lifecycle responsibilities out of ApplicationFeedHandler
-
-Clarify this rule:
-
-> Handlers process events. Application owns lifecycle.
-
-`ApplicationFeedHandler` should primarily handle:
-
-```text
-TickerUpdate
-    |
-    v
-StatisticsProcessor
-    |
-    v
-StatisticsUpdate
-    |
-    v
-OutputSink
-```
-
-Avoid making it responsible for unrelated application lifecycle concerns such as:
-
-- cancelling `signal_set`,
-- owning or mutating the final application result,
-- deciding process-level shutdown policy,
-- final global cleanup.
-
-Move those concerns toward the application orchestration layer.
-
-If the feed handler must receive `on_stopped`, use that callback to report completion upward rather than directly manipulating unrelated application resources where possible.
-
----
-
-## 5. Remove the CsvSink -> TickerFeed shutdown dependency
-
-The current flush-error path captures the `TickerFeed` and calls `feed->stop()`.
-
-Remove that sideways dependency.
-
-The desired direction is:
-
-```text
-CsvSink detects output error
-        |
-        v
-Application receives/records fatal error
-        |
-        v
-Application decides to stop TickerFeed
-```
-
-The output layer should report errors, not control the network feed.
-
-This should also make future sink types cleaner: a `BrokerSink` or `KafkaSink` should not need access to the feed in order to report failure.
-
-Refactor the lifecycle/error wiring so that the application is the coordinator.
-
-Avoid fragile temporal assumptions such as callbacks being safe only because a `unique_ptr<TickerFeed>` is guaranteed to have been assigned before the callback can run.
-
----
-
-## 6. Preserve FeedConnection / TickerFeed separation
-
-Keep the current semantic split.
-
-`FeedConnection` should own generic transport/session concerns:
-
-- DNS,
-- TCP,
-- TLS,
-- WebSocket handshake,
-- subscription write,
-- async reads,
-- bounded setup/shutdown,
-- transport errors.
-
-It should not know about:
-
-- ticker JSON semantics,
-- sliding windows,
-- CSV,
-- statistics,
-- application shutdown policy.
-
-`TickerFeed` should own Coinbase ticker protocol semantics:
-
-```text
-raw WebSocket message
-      |
-      v
-parse ticker message
-      |
-      v
-TickerUpdate
-```
-
-This is a good future extension point:
-
-```text
-FeedConnection
-     |
-     +-- TickerFeed
-     +-- future Level2Feed
-     +-- future TradesFeed
-```
-
-Do not merge protocol parsing into transport.
-
----
-
-## 7. Keep the statistics module essentially unchanged
-
-Preserve the independence of:
-
-```text
-StatisticsProcessor
-SlidingWindow
-```
-
-They should remain free of:
-
-- Asio,
-- Beast,
-- JSON,
-- file I/O,
-- logging,
-- output lifecycle,
-- shutdown policy.
-
-Keep the existing per-symbol ownership model.
-
-Do not genericize `SlidingWindow` with strategy classes or template parameters unless there is a concrete need.
-
-Preserve the current data-structure model:
-
-```text
-deque                 -> expiration order
-two ordered multisets -> median / low / high
-trade-id index        -> retained duplicate detection
-compensated sum       -> mean
-```
-
-If useful, improve comments/tests around the median invariants:
-
-```text
-lower.size() == upper.size()
-or
-lower.size() == upper.size() + 1
-
-max(lower) <= min(upper)
-```
-
-Avoid unrelated changes to this module.
-
----
-
-## 8. Keep one WebSocket connection for the assignment
-
-Do not reintroduce configurable connection groups now.
-
-The current single connection carrying multiple symbols satisfies the assignment.
-
-Document the future scaling path instead of implementing it.
-
-Potential future component:
-
-```text
-FeedManager
-```
-
-Semantic meaning:
-
-```text
-FeedConnection = one transport session
-TickerFeed     = Coinbase ticker protocol on one connection
-FeedManager    = coordination/ownership of multiple TickerFeed instances
-```
-
-Future architecture could become:
-
-```text
-FeedManager
-  +-- TickerFeed #1 -> BTC-USD
-  +-- TickerFeed #2 -> ETH-USD
-  +-- TickerFeed #3 -> SOL-USD
-```
-
-without changing statistics/output.
-
-Do not implement `FeedManager` until multiple feed instances actually exist.
-
----
-
-## 9. Preserve the single-threaded Asio model
-
-Keep one `io_context` thread.
-
-The reasoning should remain:
-
-- per-message processing is cheap,
-- state has one owner,
-- ordering is deterministic,
-- no locks are needed,
-- async I/O allows multiple outstanding I/O activities without blocking a thread per connection.
-
-Do not add worker threads unless profiling demonstrates an actual CPU bottleneck.
-
----
-
-## 10. Review timed CSV flushing deliberately
-
-The current `CsvSink` uses:
-
-- row-count threshold,
-- timer-based flush,
-- buffered output.
-
-Keep this only if the intended semantic is:
-
-> buffered rows should become externally visible within a bounded time even if the feed becomes idle.
-
-If that is intentional, retain it and document the rationale clearly.
-
-If that behavior is not important for the assignment, simplify the sink.
-
-Do not switch to flush-per-row.
-
-Regardless of whether timed flushing remains, errors should be reported upward to the application rather than causing the sink to directly stop the feed.
-
----
-
-## 11. Keep Result-based error handling
-
-Continue using:
+With the proposed context, `CsvSink` should no longer need a separately registered application-specific callback such as:
 
 ```cpp
-std::expected<T, Error>
+set_flush_error_handler(...)
 ```
 
-for normal validation, parsing, protocol, statistics, transport, and output failures.
-
-Keep exception handling only at unavoidable library/emergency boundaries.
-
-Do not add an exception hierarchy.
-
----
-
-## 12. Preserve module-owned configuration types
-
-Keep:
+Instead, the context available to the asynchronous flush operation should provide the reporting capability:
 
 ```cpp
-Config {
-    Symbols symbols;
-    FeedConfig feed;
-    WindowOptions window;
-    CsvConfig output;
+ctx.fail(error);
+```
+
+Conceptually:
+
+```cpp
+void CsvSink::schedule_flush(ExecutionContext& ctx) {
+    flush_timer_.async_wait(
+        [this, &ctx](boost::system::error_code ec) {
+            if (ec)
+                return;
+
+            if (auto flushed = flush_pending(); !flushed)
+                ctx.fail(std::move(flushed.error()));
+        });
 }
 ```
 
-with sub-config types owned by the modules that understand them:
+The exact implementation may differ if required for safe lifetime management, but preserve this ownership direction:
 
 ```text
-FeedConfig      -> feed
-WindowOptions   -> statistics
-CsvConfig       -> output
-Config          -> composition/config module
+CsvSink
+    |
+    | reports failure
+    v
+ExecutionContext / application run control
+    |
+    | applies application shutdown policy
+    v
+TickerFeed::stop()
 ```
 
-Do not pass the whole application `Config` into lower-level modules.
+`CsvSink` must not know about `TickerFeed`.
 
----
+## Run control
 
-## 13. Update design documentation
+Separate the public context capability from the concrete mechanism used to stop the application.
 
-Update the README / architecture documentation so the intended boundaries are explicit.
+A small application-owned `RunControl` or equivalent is acceptable.
 
-Use a concise conceptual diagram such as:
+For example:
+
+```cpp
+class RunControl {
+public:
+    void fail(Error error);
+    void request_stop(std::string_view reason);
+    bool stopping() const noexcept;
+};
+```
+
+`fail()` should:
+
+1. preserve first-failure-wins semantics,
+2. record the fatal error in application run state,
+3. initiate graceful application shutdown.
+
+`request_stop()` should be idempotent.
+
+The actual stop implementation remains application policy.
+
+## Graceful shutdown
+
+Do not use `io_context::stop()` as the normal failure path.
+
+Normal shutdown should remain:
 
 ```text
-                         Application
-                lifecycle / orchestration
-                           |
-        +------------------+------------------+
-        |                  |                  |
-    TickerFeed     StatisticsProcessor      OutputSink
-        |                  |                  |
- FeedConnection       SlidingWindow         CsvSink
-        |                                     |
-   Beast/Asio                            CsvWriter
+failure / signal
+    ↓
+RunControl::request_stop()
+    ↓
+TickerFeed::stop()
+    ↓
+FeedConnection cancels/closes active transport work
+    ↓
+feed completion
+    ↓
+output close
+signal cancellation
+    ↓
+io_context naturally drains
+    ↓
+io.run() returns
 ```
 
-Document these extension paths:
+`io_context::stop()` may remain an emergency containment mechanism for unexpected exceptions.
 
-### Output extension
+This preserves the existing bounded/graceful transport shutdown behavior.
+
+## Lifetime requirements
+
+Be careful with asynchronous handlers that retain access to `ExecutionContext`.
+
+The context must outlive every pending operation that may use it.
+
+The application already owns the event loop and all major runtime objects for the duration of `io.run()`. Preserve or strengthen that lifetime relationship.
+
+Do not capture temporary contexts or objects whose lifetime ends before pending timer/socket handlers drain.
+
+If passing `ExecutionContext&` directly into a scheduled timer would make lifetime guarantees unclear, restructure ownership so the context is application-owned and stable for the entire run.
+
+## Separation of concerns to preserve
+
+After the refactor:
 
 ```text
-StatisticsUpdate -> CsvSink
-                 -> future BrokerSink
-                 -> future KafkaSink
-                 -> future DatabaseSink
+FeedConnection
+    Transport/session mechanics only:
+    DNS, TCP, TLS, WebSocket, async reads/writes, shutdown.
+
+TickerFeed
+    Coinbase ticker protocol:
+    subscription and raw-message-to-TickerUpdate translation.
+
+ApplicationFeedHandler
+    Event processing:
+    TickerUpdate -> StatisticsProcessor -> StatisticsUpdate -> OutputSink.
+
+StatisticsProcessor
+    Pure statistics/domain state.
+    No Asio, feed, output, or application lifecycle dependencies.
+
+CsvSink
+    CSV buffering, formatting coordination, flush timer, file I/O.
+    Reports asynchronous failure through execution context.
+    Does not control the feed.
+
+ExecutionContext / RunControl
+    Cross-cutting execution state:
+    logging where appropriate,
+    first-failure recording,
+    stop requests,
+    application-level lifecycle reporting.
+
+Application
+    Composition root and owner of lifecycle/shutdown policy.
 ```
 
-### Feed protocol extension
+## Desired simplifications
 
-```text
-FeedConnection -> TickerFeed
-               -> future Level2Feed
-               -> future TradesFeed
+The refactor should aim to remove or reduce plumbing such as:
+
+```cpp
+CsvSink::set_flush_error_handler(...)
 ```
 
-### Connection scaling
+and application-specific lifecycle `std::function` members where the execution context makes them unnecessary.
 
-Current:
+Do not remove callbacks that are inherent to Boost.Asio itself, such as timer, signal, or transport completion handlers.
 
-```text
-one TickerFeed
-one FeedConnection
-many symbols
+The goal is not to eliminate asynchronous callbacks altogether.
+
+The goal is to eliminate redundant application-level callback wiring.
+
+## Important semantic distinction
+
+`ExecutionContext::fail()` is asynchronous failure reporting, not `std::expected` propagation.
+
+Synchronous code should continue to return:
+
+```cpp
+Result<void>
 ```
 
-Future:
+and propagate errors normally:
 
-```text
-FeedManager
-  +-- TickerFeed
-  +-- TickerFeed
-  +-- TickerFeed
+```cpp
+return std::unexpected(error);
 ```
 
-### CPU scaling
+For asynchronous work, where the original call stack no longer exists:
 
-Current:
-
-```text
-one io_context thread
+```cpp
+ctx.fail(error);
 ```
 
-Future only if profiling justifies it:
+reports the error into application lifecycle state.
 
-```text
-I/O event loop
-      |
-      v
-partitioned workers / processing
-```
+Keep both mechanisms.
 
----
+## Scope
 
-## 14. Desired architectural properties
+This is a targeted lifecycle and event-propagation refactor.
 
-After the refactor, these statements should be true:
+Do not:
 
-1. `run_application()` assumes it receives a validated `Config`.
-2. All configuration validation rules live in the config/module-validation layer, not application orchestration.
-3. Replacing CSV with another sink does not require modifying statistics code.
-4. `ApplicationFeedHandler` does not depend specifically on `CsvSink`.
-5. Output failure is reported upward; the output layer does not stop the feed directly.
-6. `Application` owns lifecycle and shutdown policy.
-7. `FeedConnection` contains transport logic only.
-8. `TickerFeed` contains Coinbase ticker protocol logic.
-9. Statistics code knows nothing about network or output details.
-10. Adding multiple connections later does not require changing statistics/output.
-11. Every long-lived resource has an obvious owner.
-12. No synchronization machinery exists unless multiple threads actually require it.
+- rewrite `SlidingWindow`,
+- alter the statistical algorithms,
+- merge `TickerFeed` and `FeedConnection`,
+- add `FeedManager`,
+- add reconnect/backoff/heartbeat/sequence-gap recovery,
+- add worker threads,
+- introduce an event bus,
+- introduce a generic service locator,
+- replace the current output abstraction,
+- force coroutines into unrelated modules.
 
----
+Make all changes necessary to establish the execution-context model cleanly, but avoid unrelated refactors.
 
-## Implementation priority
+## Acceptance criteria
 
-Apply changes in roughly this order:
+After the refactor:
 
-1. Remove redundant `validate_config()` from `run_application()` and establish the validated-config precondition.
-2. Make `ApplicationFeedHandler` generic over `OutputSink`.
-3. Move application-lifecycle state/cancellation responsibilities out of `ApplicationFeedHandler`.
-4. Remove the `CsvSink -> feed.stop()` dependency and route fatal sink errors through application orchestration.
-5. Preserve `TickerFeed` / `FeedConnection` separation.
-6. Preserve `StatisticsProcessor` / `SlidingWindow`.
-7. Reassess timed flushing only if simplification materially improves the design.
-8. Update tests affected by lifecycle/composition changes.
-9. Update README/design documentation with ownership rules and future-extension paths.
-
-This is a targeted architectural refactor, not a minimal-change patch. Make substantial changes where they improve ownership, failure propagation, or extensibility, but avoid unrelated rewrites and speculative abstractions.
+1. Application remains the lifecycle owner.
+2. `ExecutionContext` contains only cross-cutting execution capabilities.
+3. Statistics and output remain explicit dependencies rather than members of the context.
+4. `CsvSink` does not know about `TickerFeed`.
+5. Async CSV flush failures can report through application context/run control.
+6. `set_flush_error_handler()` is removed if the context fully replaces it.
+7. Immediate sink failures still use `Result<void>`.
+8. Timed flush failures still work correctly.
+9. Feed shutdown remains graceful and bounded.
+10. `io_context::stop()` is not used as the ordinary shutdown policy.
+11. `TickerFeed`/`FeedConnection` separation remains unchanged.
+12. Single-threaded Asio execution remains unchanged.
+13. Context lifetime is valid for every pending async operation.
+14. Tests are updated to verify first-failure-wins behavior, async output failure handling, signal shutdown, and normal feed completion.

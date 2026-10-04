@@ -121,7 +121,8 @@ class ApplicationProcess {
   public:
     ApplicationProcess(const Config &config,
                        const std::filesystem::path &diagnostics_path,
-                       std::optional<std::size_t> file_size_limit = std::nullopt) {
+                       std::optional<std::size_t> file_size_limit = std::nullopt,
+                       std::optional<ErrorCode> expected_error = std::nullopt) {
         if (auto valid = validate_config(config); !valid)
             throw std::runtime_error("invalid test application configuration: " + valid.error().message);
         pid_ = ::fork();
@@ -134,6 +135,8 @@ class ApplicationProcess {
             std::ofstream diagnostics(diagnostics_path);
             Logger logger(diagnostics);
             const auto result = run_application(config, logger);
+            if (expected_error && (result || result.error().code != *expected_error))
+                ::_exit(3);
             ::_exit(result ? 0 : 1);
         }
     }
@@ -234,11 +237,41 @@ TEST(Application, TimedFlushFailureStopsAnIdleFeed) {
     test::TestTrustStore trust;
     test::LoopbackExchange exchange(config.symbols, {ticker}, test::ExchangeReply::WaitForClientClose);
     config.feed = exchange.config();
-    ApplicationProcess app(config, directory.file("application.log"), header.size());
+    ApplicationProcess app(config, directory.file("application.log"), header.size(), ErrorCode::OutputIo);
     ASSERT_TRUE(app.wait_for_exit());
     EXPECT_EQ(app.exit_code(), 1);
     EXPECT_EQ(test::read_file(config.output.path), header);
     EXPECT_TRUE(exchange.completed_successfully());
+}
+
+TEST(Application, TimedFlushFailureSurvivesCloseDeadlineAndFinalFlushFailures) {
+    test::TemporaryDirectory directory;
+    auto config = configuration(directory.file("output.csv"));
+    config.output.flush_interval = std::chrono::milliseconds{20};
+    test::TestTrustStore trust;
+    test::LoopbackExchange exchange(config.symbols, {ticker}, test::ExchangeReply::RemainIdle);
+    config.feed = exchange.config();
+    config.feed.close_timeout = Duration{1};
+    ApplicationProcess app(config, directory.file("application.log"), header.size(), ErrorCode::OutputIo);
+    ASSERT_TRUE(app.wait_for_exit());
+    EXPECT_EQ(app.exit_code(), 1);
+    EXPECT_EQ(test::read_file(config.output.path), header);
+}
+
+TEST(Application, ProcessingFailureSurvivesTimedFlushAndCloseFailures) {
+    test::TemporaryDirectory directory;
+    auto config = configuration(directory.file("output.csv"));
+    config.output.flush_interval = std::chrono::milliseconds{20};
+    test::TestTrustStore trust;
+    const std::string earlier =
+        R"({"type":"ticker","product_id":"BTC-USD","trade_id":43,"price":"2","time":"2026-01-02T03:04:04Z"})";
+    test::LoopbackExchange exchange(config.symbols, {ticker, earlier}, test::ExchangeReply::RemainIdle);
+    config.feed = exchange.config();
+    config.feed.close_timeout = Duration{1};
+    ApplicationProcess app(config, directory.file("application.log"), header.size(), ErrorCode::OutOfOrderTimestamp);
+    ASSERT_TRUE(app.wait_for_exit());
+    EXPECT_EQ(app.exit_code(), 1);
+    EXPECT_EQ(test::read_file(config.output.path), header);
 }
 
 TEST(Application, ShutdownDeadlineForcesCloseWhenPeerDoesNotRespond) {

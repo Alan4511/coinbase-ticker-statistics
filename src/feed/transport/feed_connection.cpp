@@ -159,10 +159,13 @@ class FeedConnection::Session {
     }
 
     void begin_close(Result<void> result) {
-        if (state_ == State::Closing || state_ == State::Stopped)
+        if (state_ == State::Stopped)
             return;
-        if (!result)
+        // A consumer may request stop synchronously before returning its failure.
+        if (result_ && !result)
             result_ = std::move(result);
+        if (state_ == State::Closing)
+            return;
         if (state_ != State::Reading) {
             // No close handshake during DNS/TLS/upgrade/subscription write.
             complete({});

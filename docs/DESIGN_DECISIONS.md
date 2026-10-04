@@ -15,9 +15,10 @@
    Beast/Asio                            CsvWriter
 ```
 
-`run_application()` owns the event loop, signal wait, run result, CSV sink,
-ticker feed and application handler in local scope. All borrowed objects remain
-alive until pending operations drain. The application opens output after the
+`run_application()` constructs a private `Application` that owns run control,
+a stable execution context, the event loop, signal wait, CSV sink, ticker feed
+and application handler. All borrowed objects remain alive until pending
+operations drain. The application opens output after the
 feed connects and writes its subscription, records the first fatal error,
 requests shutdown, closes output on feed completion and cancels the signal wait.
 A final close also covers exceptions that stop the event loop early. Validation
@@ -39,8 +40,13 @@ owns the connection and implements its raw transport callbacks directly. It
 borrows the typed consumer, encodes the ticker subscription, uses
 `feed/parser/` to decode messages, owns input counters and filters unrelated
 messages. Malformed input remains fatal. Its typed consumer satisfies `FeedHandler`,
-requiring `on_connected()`, `on_message(const TickerUpdate&)` and
-`on_stopped(Result<void>)`.
+requiring `on_connected(ctx)`, `on_message(ctx, const TickerUpdate&)` and
+`on_stopped(ctx, Result<void>)`. The transport contract remains raw and does not
+receive application context; `TickerFeed` carries it to its typed consumer.
+At this asynchronous event boundary, decoding/consumer failures are recorded
+through the context before closing can produce later timer or transport errors.
+The same failure still returns to the connection through `Result<void>`. A
+reentrant stop request does not discard that returned failure during close.
 A ready event means subscription bytes were written, not that the server
 acknowledged them. Each update may represent batched matches rather than an
 individual trade.
@@ -50,27 +56,45 @@ individual trade.
 Filtered symbols and retained duplicates produce an empty success; calculation
 failures return an error. Its window algorithms and data structures are unchanged.
 
-`ApplicationFeedHandler<Sink>` owns the processor and emitted-row count and
-borrows an `OutputSink`. It routes typed updates and returns processing/write
-failures to the feed. Its connected/stopped callbacks report to application
-orchestration; the handler has no CSV, logger, signal-set or final-result
-reference. Lifecycle callbacks use two owned `std::function` adapters, keeping
-policy in composition rather than adding another policy template. This retains
-runtime dispatch for infrequent lifecycle events; per-update sink calls use
-compile-time polymorphism. Nonempty callbacks and their borrowed targets must
-remain valid throughout feed operations.
+`ApplicationFeedHandler<Sink, Lifecycle>` owns the processor and emitted-row
+count and borrows its sink and an explicit application lifecycle owner. It routes
+typed updates and returns processing/write failures to the feed. Connected and
+stopped events call that owner directly with the execution context, replacing
+two `std::function` adapters with compile-time dispatch. This adds a small
+lifecycle template parameter but keeps startup/cleanup policy in `Application`,
+outside both the sink delivery contract and domain processing.
 
-`OutputSink` requires only `write_statistics(update) -> Result<void>`. It does
-not require opening files, flushing, timers or closing resources. Both `CsvSink`
-and `CsvWriter` satisfy it, and handler tests use sinks with no CSV lifecycle.
-`CsvSink` owns its configuration, file, directory creation and batch-flush timer;
-`CsvWriter` borrows the stream and handles formatting/writing. The application
-installs the sink's error reporter after the feed exists and before opening
-output. The sink reports timed errors upward; application policy records the
-failure and stops the feed. No callback captures a feed pointer awaiting later
-assignment. A read-only settings accessor supports application readiness logs
-without another configuration owner. Separating construction and error-reporter
-installation adds one wiring step; `open()` rejects a missing reporter.
+`ExecutionContext` exposes failure reporting, stop requests, a stopping query
+and feed-completion reporting. It borrows `RunControl`; it contains no feed,
+sink, statistics, configuration or signal-set services. Logging remains an
+explicit application dependency rather than adding a logger dependency to
+output. These shared, header-only capabilities live beside the common vocabulary.
+`RunControl` preserves the first reported failure and makes stop requests
+idempotent, setting its state before invoking policy so synchronous completion
+can safely reenter it. It owns one stop action supplied by the application;
+this deliberate `std::function` boundary avoids templating the run control and
+CSV implementation over the concrete feed type. It replaces independently
+registered lifecycle/error callbacks, rather than removing Asio callbacks.
+
+`OutputSink` still requires only `write_statistics(update) -> Result<void>`.
+It does not require opening files, flushing, timers or closing resources. Both
+`CsvSink` and `CsvWriter` satisfy it, and handler tests use sinks with no CSV
+lifecycle. `CsvSink` owns its configuration, file, directory creation and
+batch-flush timer; `CsvWriter` borrows the stream and handles formatting/writing.
+The sink requires a stable execution context at construction and reports timer
+failures through `ctx.fail(error)`; there is no `set_flush_error_handler()` or
+later registration step. Immediate write/threshold/close failures still return
+`Result<void>`. The context is retained only for asynchronous failure reporting;
+statistics and synchronous output formatting remain independent of run control.
+
+The application stop action closes/cancels the feed. Feed completion records its
+result, closes output and cancels the signal wait. Normal shutdown lets the event
+loop drain; `io_context::stop()` is reserved for unexpected exceptions. Application
+members are ordered so the feed is destroyed before its consumer, and the event
+loop destroys any abandoned handlers before the context and run control. This
+keeps captured references valid even during emergency teardown. Borrowed objects
+must still remain alive throughout a normal run. A read-only sink settings
+accessor supports readiness logs without another configuration owner.
 
 `TickerFeed<Handler>` calls its typed consumer directly, without an `InputHandler`
 object or a second set of type-erased callbacks. Its thin protocol wrapper lives
@@ -115,8 +139,8 @@ factories retain their own invariant checks for independent use.
 ## Extension paths
 
 - **Output:** `StatisticsUpdate → CsvSink`, or a future `BrokerSink`, `KafkaSink`
-  or `DatabaseSink`. Instantiate `ApplicationFeedHandler<NewSink>` and wire that
-  sink's construction, readiness, cleanup and error reporting in application
+  or `DatabaseSink`. Instantiate `ApplicationFeedHandler<NewSink, Lifecycle>`
+  and wire the sink's construction, readiness, cleanup and error reporting in application
   composition. Statistics and event routing do not change; runtime sink
   selection is not implemented.
 - **Protocol:** `FeedConnection → TickerFeed`, or a future `Level2Feed` or
@@ -290,8 +314,8 @@ guarantees.
   no timers. The stream's existing buffer holds rows without a separate queue.
   The sink depends on Asio, while the stream formatter remains independent of it.
   Timer-triggered flush failures occur after the originating `write_statistics()`
-  call has returned. They are reported asynchronously to the application, which
-  preserves the first fatal error and owns shutdown policy. Failures during
+  call has returned. They report through the stable execution context to application
+  run control, which preserves the first fatal error and owns shutdown policy. Failures during
   writes, row-triggered flushing or close return through `Result<void>` directly.
   Batching delays visibility and error detection; crashes/SIGKILL can lose pending
   rows. A failed flush can leave fewer complete rows than the emitted-row counter
@@ -357,7 +381,7 @@ Sequence recovery, runtime reload and crash durability are outside scope.
 
 ## Verification scope
 
-The recorded macOS run passed **141/141 tests**, and the independent fixture
+The recorded macOS run passed **147/147 tests**, and the independent fixture
 verifier passed. The current live capture contains **96 verified rows**, with
 40 rows visible before shutdown and a successful graceful SIGTERM shutdown.
 Linux CI results are not yet confirmed.
@@ -382,9 +406,11 @@ python3 tools/verify_csv.py --config config/live_verification.json > logs/live-v
 
 Calculation tests include deterministic fixtures and 16,000 randomized window
 updates. Boundary tests cover numeric round trips, typed feed delivery, error
-propagation, immediate/batched CSV visibility, idle timed flushing and output
-failures, SIGINT/SIGTERM cleanup during idle reads and startup, close/connection
-deadlines and local TLS/WebSocket operation. Public certificate/key fixtures
+propagation, first-failure preservation and idempotent stop requests,
+immediate/batched CSV visibility, idle timed flushing and output
+failures (including overlapping processing, flush and close failures),
+SIGINT/SIGTERM cleanup during idle reads and startup, close/connection deadlines
+and local TLS/WebSocket operation. Public certificate/key fixtures
 exist only for tests.
 
 The independent Python verifier recomputes CSV statistics with Decimal and

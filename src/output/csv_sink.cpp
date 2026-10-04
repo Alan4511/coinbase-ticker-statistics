@@ -5,23 +5,17 @@
 
 namespace coinbase_ticker_statistics {
 
-CsvSink::CsvSink(boost::asio::io_context &io, CsvConfig config)
-    : config_(std::move(config)), flush_timer_(io), writer_(stream_) {
+CsvSink::CsvSink(boost::asio::io_context &io, CsvConfig config, ExecutionContext &context)
+    : config_(std::move(config)), context_(context), flush_timer_(io), writer_(stream_) {
 }
 
 const CsvConfig &CsvSink::config() const noexcept {
     return config_;
 }
 
-void CsvSink::set_flush_error_handler(std::function<void(Error)> on_flush_error) {
-    on_flush_error_ = std::move(on_flush_error);
-}
-
 Result<void> CsvSink::open() {
     if (auto valid = validate_csv_config(config_); !valid)
         return valid;
-    if (!on_flush_error_)
-        return fail(ErrorCode::InvalidConfiguration, "a timed flush error handler is required");
     if (stream_.is_open())
         return fail(ErrorCode::InvalidState, "CSV output is already open");
     const auto &path = config_.path;
@@ -56,7 +50,7 @@ void CsvSink::schedule_flush() {
         if (error || deadline != flush_timer_.expiry() || pending_rows_ == 0)
             return;
         if (auto flushed = flush_pending(); !flushed)
-            on_flush_error_(std::move(flushed.error()));
+            context_.fail(std::move(flushed.error()));
     };
     flush_timer_.async_wait(on_flush_due);
 }

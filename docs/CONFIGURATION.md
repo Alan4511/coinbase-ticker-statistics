@@ -85,8 +85,8 @@ visibility and potentially detection of output errors. A timed flush failure
 stops the feed and yields a failure exit status. Flush does not guarantee disk
 durability; abrupt termination can lose buffered rows.
 
-Production uses `ApplicationFeedHandler<CsvSink>`. Another destination supplies
-`write_statistics()` and changes application construction/lifecycle wiring;
+Production uses `ApplicationFeedHandler<CsvSink, Application>`. Another destination
+supplies `write_statistics()` and changes application construction/lifecycle wiring;
 statistics and the generic event handler stay unchanged. `OutputSink` does not
 provide a runtime sink registry or configurable sink factory.
 
