@@ -17,7 +17,7 @@ const std::string ticker =
 class FeedRun final {
   public:
     Result<void> configure(FeedConfig config, const Symbols &products = symbols) {
-        auto created = TickerFeed::create(io, std::move(config), products, *this);
+        auto created = TickerFeed<FeedRun>::create(io, std::move(config), products, *this);
         if (!created)
             return std::unexpected(std::move(created.error()));
         feed = std::move(*created);
@@ -41,7 +41,7 @@ class FeedRun final {
         EXPECT_EQ(stopped, 1U);
     }
     boost::asio::io_context io;
-    std::unique_ptr<TickerFeed> feed;
+    std::unique_ptr<TickerFeed<FeedRun>> feed;
     std::vector<TickerUpdate> ticker_updates;
     Result<void> outcome;
     Result<void> message_result;
@@ -50,6 +50,8 @@ class FeedRun final {
 };
 
 static_assert(FeedHandler<FeedRun>);
+static_assert(FeedConnectionHandler<TickerFeed<FeedRun>>);
+static_assert(!std::is_polymorphic_v<TickerFeed<FeedRun>>);
 static_assert(!FeedHandler<int>);
 static_assert(!std::is_polymorphic_v<FeedRun>);
 

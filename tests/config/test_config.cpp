@@ -47,6 +47,36 @@ TEST(Config, RejectsMissingRequiredSettings) {
     }
 }
 
+TEST(Config, InvalidDirectSettingsDoNotTouchExistingOutput) {
+    test::TemporaryDirectory directory;
+    const auto path = directory.file("existing.csv");
+    test::write_file(path, "previous run\n");
+    Config config{Symbols{"BTC-USD"}, FeedConfig{}, WindowOptions{}, CsvConfig{path}};
+    ASSERT_RESULT_OK(validate_config(config));
+    config.symbols = {"BTC-USD", "BTC-USD"};
+    ASSERT_RESULT_ERROR(validate_config(config), ErrorCode::InvalidConfiguration);
+    config.symbols = {"BTC-USD"};
+    config.feed.host.clear();
+    ASSERT_RESULT_ERROR(validate_config(config), ErrorCode::InvalidConfiguration);
+    config.feed = FeedConfig{};
+    config.window.duration = std::chrono::days{365};
+    ASSERT_RESULT_OK(validate_config(config));
+    config.window.duration += Duration{1};
+    ASSERT_RESULT_ERROR(validate_config(config), ErrorCode::InvalidConfiguration);
+    config.window.duration = Duration{0};
+    ASSERT_RESULT_ERROR(validate_config(config), ErrorCode::InvalidConfiguration);
+    config.window.duration = Duration{300};
+    config.symbols = {"invalid-product"};
+    ASSERT_RESULT_ERROR(validate_config(config), ErrorCode::InvalidConfiguration);
+    config.symbols = {"BTC-USD"};
+    config.output.flush_every_rows = 0;
+    ASSERT_RESULT_ERROR(validate_config(config), ErrorCode::InvalidConfiguration);
+    config.output.flush_every_rows = 100;
+    config.output.flush_interval = std::chrono::milliseconds{0};
+    ASSERT_RESULT_ERROR(validate_config(config), ErrorCode::InvalidConfiguration);
+    EXPECT_EQ(test::read_file(path), "previous run\n");
+}
+
 TEST(Config, SuppliesDefaultsOnlyForOptionalSettings) {
     ASSERT_RESULT_VALUE(config, parse_optional_settings("{}"));
     EXPECT_EQ(config.symbols, (std::vector<std::string>{"BTC-USD", "ETH-USD", "SOL-USD"}));

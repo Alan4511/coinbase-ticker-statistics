@@ -5,6 +5,10 @@ current options. Root `symbols` and `output.path` are required. Other settings
 use the defaults below. Known fields have strict type/range validation; unknown
 keys are ignored and duplicate JSON keys use their last value.
 
+`parse_config()` and `load_config()` return validated settings. `run_application()`
+requires that validated configuration; direct C++ construction or changes require
+`validate_config()` before running.
+
 ## Minimal configuration
 
 ```json
@@ -81,9 +85,10 @@ visibility and potentially detection of output errors. A timed flush failure
 stops the feed and yields a failure exit status. Flush does not guarantee disk
 durability; abrupt termination can lose buffered rows.
 
-The application handler currently uses `CsvSink`. Another output destination
-requires changing that wiring; `OutputSink` documents the delivery contract,
-but does not provide a runtime sink registry or a configurable sink factory.
+Production uses `ApplicationFeedHandler<CsvSink>`. Another destination supplies
+`write_statistics()` and changes application construction/lifecycle wiring;
+statistics and the generic event handler stay unchanged. `OutputSink` does not
+provide a runtime sink registry or configurable sink factory.
 
 Columns are `time,symbol,trade_id,trade_price,count,mean,median,low,high`.
 Time is UTC exchange time with nine fractional digits. Numbers use `max_digits10`

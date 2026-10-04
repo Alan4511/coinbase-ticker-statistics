@@ -2,81 +2,137 @@
 
 ## Module boundaries and ownership
 
-`run_application()` owns the event loop, signal wait, CSV sink, ticker feed,
-application feed handler and shutdown state in local scope. The feed owns input
-counters and invokes the parser; `ApplicationFeedHandler` owns the processor and
-emitted-row count, and borrows the sink, logger and shutdown controls. It reads
-output settings from the sink's owned configuration when logging readiness.
-All owners and borrowed targets remain alive until pending operations
-drain. The sink owns its configuration, file and flush timer. The processor maps
-each symbol to its own `SlidingWindow`. The processing path is:
-
 ```text
-FeedConnection → raw text → TickerFeed → TickerUpdate → per-symbol SlidingWindow
-                                                   → StatisticsUpdate → CSV sink
+                         Application
+                 lifecycle / orchestration
+                           |
+        +------------------+------------------+
+        |                  |                  |
+    TickerFeed     StatisticsProcessor      OutputSink
+        |                  |                  |
+ FeedConnection       SlidingWindow         CsvSink
+        |                                     |
+   Beast/Asio                            CsvWriter
 ```
 
-`statistics/` contains window state and calculations without sockets, JSON or
-files. `feed/parser/` validates incoming data; `feed/transport/` owns the socket
-and TLS lifecycle. Subscription validation is separate from encoding, so loading
-configuration does not construct a throwaway network message. `output/` formats
-and writes typed results. `StatisticsProcessor` lives in `statistics/`: it routes
-ticker updates to per-symbol windows and returns an optional `StatisticsUpdate`, without
-depending on feed or output code. Filtered symbols and retained duplicates return
-an empty success; calculation failures return an error. The application hands
-each resulting update to the sink. Returning a typed value adds a small handoff
-but lets calculations and output be reused and tested independently.
+`run_application()` owns the event loop, signal wait, run result, CSV sink,
+ticker feed and application handler in local scope. All borrowed objects remain
+alive until pending operations drain. The application opens output after the
+feed connects and writes its subscription, records the first fatal error,
+requests shutdown, closes output on feed completion and cancels the signal wait.
+A final close also covers exceptions that stop the event loop early. Validation
+or connection failures preserve previous output; later failures can leave a
+partial file.
 
-`run_application()` assembles the modules, registers signal handling, drives the
-event loop and finalizes the run. `FeedHandler` is a feed-owned concept requiring
-`on_connected()`, `on_message(const TickerUpdate&)` and `on_stopped(Result<void>)` methods.
-`TickerFeed` owns a `FeedConnection` and its decoding handler. `FeedConnection`
-owns DNS/TCP/TLS/WebSocket operations and deadlines, writes a feed-supplied
-subscription, and delivers borrowed text through a `FeedConnectionHandler`
-concept. It neither constructs subscriptions nor interprets JSON. `TickerFeed`
-encodes the ticker subscription, decodes text using `feed/parser/`, owns input
-counters, filters unrelated messages, and delivers typed ticker updates.
-Malformed input remains fatal. `ApplicationFeedHandler` responds by opening the
-sink, routing ticker updates to statistics/output, and coordinating completion. Keeping
-that implementation in `app/` makes the feed independent of statistics, CSV and
-logging policies. Only the feed invokes event methods; if startup fails
-immediately, the application preserves the error and requests a stop rather than
-issuing a second completion notification. The templated `TickerFeed::create()`
-checks the handler's methods at compile time, with no inheritance or virtual
-application methods. Both feed and connection factories adapt borrowed objects
-to private `std::function` callbacks, keeping parsing and Beast session code in
-`.cpp` rather than instantiating them for each consumer. Separating connection
-and decoding adds ownership objects, startup allocations and a second callback
-boundary. It lets another TLS/WebSocket feed reuse setup, reading and shutdown
-by supplying its own subscription and decoder, without changing transport code
-or duplicating its state machine. Runtime indirection and possible callback
-allocations remain; this is not a claim of direct or allocation-free calls.
-The connection currently supports text messages and one initial subscription
-write, rather than a general protocol framework. Its ready event means that
-subscription bytes were written, not that the server acknowledged them. The
-handler's lifetime must cover pending operations, and ticker-update references
-are valid only during delivery. `on_message()` denotes one decoded ticker update,
-which can represent batched matches; the callback does not receive raw JSON or
-promise delivery of every individual trade. Unrelated messages remain filtered
-inside the feed. The output sink also uses a concept.
+The processing path is:
 
-`OutputSink` documents `write_statistics(update) -> Result<void>`; compile-time
-checks keep `CsvSink` and `CsvWriter` consistent with that contract. The processor
-returns an update; the application handler delivers it to the concrete sink and
-propagates write errors. `CsvSink` owns the file, directory creation, header
-publication, batching and explicit final flush/close. It delegates formatting and
-stream operations to `CsvWriter`, which borrows its stream and can be tested with
-failing streams. A read-only configuration accessor avoids borrowing a second
-settings object just for logs. This adds a small ownership class but keeps file
-handling out of application orchestration. Connection and
-subscription complete before opening the output file, preserving previous output
-when validation or connection fails. Later errors can leave a partial file.
+```text
+FeedConnection → raw text → TickerFeed → TickerUpdate → StatisticsProcessor
+                                                    → StatisticsUpdate → OutputSink
+```
 
-Each module owns its CMake target; the feed parser and transport share a target.
-Tests share one executable. These boundaries separate responsibilities without
-adding libraries or interfaces solely for directory structure.
+`FeedConnection` owns DNS/TCP/TLS/WebSocket operations, the initial subscription
+write, reads and setup/close deadlines. It accepts a feed-supplied subscription
+and delivers borrowed text through the `FeedConnectionHandler` concept. It does
+not interpret JSON or decide application shutdown policy. `TickerFeed<Handler>`
+owns the connection and implements its raw transport callbacks directly. It
+borrows the typed consumer, encodes the ticker subscription, uses
+`feed/parser/` to decode messages, owns input counters and filters unrelated
+messages. Malformed input remains fatal. Its typed consumer satisfies `FeedHandler`,
+requiring `on_connected()`, `on_message(const TickerUpdate&)` and
+`on_stopped(Result<void>)`.
+A ready event means subscription bytes were written, not that the server
+acknowledged them. Each update may represent batched matches rather than an
+individual trade.
+
+`StatisticsProcessor` owns one `SlidingWindow` per symbol and returns an optional
+`StatisticsUpdate`. It has no sockets, JSON, logging or output dependencies.
+Filtered symbols and retained duplicates produce an empty success; calculation
+failures return an error. Its window algorithms and data structures are unchanged.
+
+`ApplicationFeedHandler<Sink>` owns the processor and emitted-row count and
+borrows an `OutputSink`. It routes typed updates and returns processing/write
+failures to the feed. Its connected/stopped callbacks report to application
+orchestration; the handler has no CSV, logger, signal-set or final-result
+reference. Lifecycle callbacks use two owned `std::function` adapters, keeping
+policy in composition rather than adding another policy template. This retains
+runtime dispatch for infrequent lifecycle events; per-update sink calls use
+compile-time polymorphism. Nonempty callbacks and their borrowed targets must
+remain valid throughout feed operations.
+
+`OutputSink` requires only `write_statistics(update) -> Result<void>`. It does
+not require opening files, flushing, timers or closing resources. Both `CsvSink`
+and `CsvWriter` satisfy it, and handler tests use sinks with no CSV lifecycle.
+`CsvSink` owns its configuration, file, directory creation and batch-flush timer;
+`CsvWriter` borrows the stream and handles formatting/writing. The application
+installs the sink's error reporter after the feed exists and before opening
+output. The sink reports timed errors upward; application policy records the
+failure and stops the feed. No callback captures a feed pointer awaiting later
+assignment. A read-only settings accessor supports application readiness logs
+without another configuration owner. Separating construction and error-reporter
+installation adds one wiring step; `open()` rejects a missing reporter.
+
+`TickerFeed<Handler>` calls its typed consumer directly, without an `InputHandler`
+object or a second set of type-erased callbacks. Its thin protocol wrapper lives
+in the header; JSON parsing and subscription encoding remain ordinary `.cpp`
+functions. This adds one small protocol instantiation per consumer type and
+exposes parser/subscription declarations to feed users in exchange for fewer
+callback layers and a simpler ownership graph.
+
+`FeedConnection` retains one private `std::function` adapter so the Beast session
+stays in `.cpp`, avoiding transport instantiation and heavy Boost headers for
+every consumer. Runtime indirection and possible callback allocations remain at
+that boundary. Both feed and connection have stable addresses through unique
+ownership; neither object is movable. Moving their owning `unique_ptr` does not
+move the objects. Text views and typed update references are valid only during
+delivery, and owners must remain alive until cancelled operations drain. No
+virtual application interfaces or additional feed-management machinery are added.
+
+Each source module owns its CMake target; parser and transport share the feed
+target. Tests share one executable. Template handler definitions live in headers.
 The application header includes the logger directly for readability, accepting
 its transitive formatting and stream dependencies.
+
+## Configuration boundary
+
+```text
+main → load_config() → parse_config() → validate_config() → run_application()
+```
+
+`config/` owns strict JSON decoding, application-wide validation and relative
+path resolution. `validate_config()` composes symbol/subscription, feed, window
+and CSV policy helpers from their owning modules. Module-specific rules remain
+reusable without making lower-level modules depend on the JSON loader.
+
+`run_application()` requires a validated, subsequently unmodified `Config` and
+does not repeat composition validation. Successful `parse_config()` and
+`load_config()` calls satisfy this precondition. Direct C++ construction or
+mutation requires calling `validate_config()` before running; application tests
+follow that same boundary. `Config` remains a readable aggregate rather than an
+immutable validated wrapper, accepting a documented caller precondition. Module
+factories retain their own invariant checks for independent use.
+
+## Extension paths
+
+- **Output:** `StatisticsUpdate → CsvSink`, or a future `BrokerSink`, `KafkaSink`
+  or `DatabaseSink`. Instantiate `ApplicationFeedHandler<NewSink>` and wire that
+  sink's construction, readiness, cleanup and error reporting in application
+  composition. Statistics and event routing do not change; runtime sink
+  selection is not implemented.
+- **Protocol:** `FeedConnection → TickerFeed`, or a future `Level2Feed` or
+  `TradesFeed`. New protocols supply subscription text, decoding and a typed
+  consumer. Text WebSocket messages and one initial subscription write are
+  supported; another transport or ongoing writes may require extending this
+  boundary.
+- **Connections:** today one `TickerFeed` owns one `FeedConnection` carrying many
+  symbols. A future `FeedManager` could own several ticker feeds partitioned by
+  symbol, coordinate startup/errors/shutdown, and close shared output after all
+  feeds finish. No manager or connection-group configuration exists today;
+  statistics and output need no connection-specific logic.
+- **CPU:** one `io_context` thread owns all state, preserving observed order
+  without locks. Partitioned workers would require explicit ownership and
+  ordering decisions and should be considered only after profiling demonstrates
+  a CPU bottleneck. They are outside the assignment scope.
 
 ## Naming and interface conventions
 
@@ -212,7 +268,7 @@ guarantees.
   heartbeat handling or stale-feed watchdogs. Synchronous CSV I/O and logging can
   delay every handler, including signals and deadlines.
 - **Termination and output:** Ctrl-C/SIGTERM cancels setup or starts a normal
-  WebSocket close. Feed completion closes the sink, cancelling its timer and
+  WebSocket close. Application completion handling closes the sink, cancelling its timer and
   flushing pending rows; the event loop drains cancelled handlers before final logging.
   A configurable close deadline forces transport closure if the peer does not
   respond; close/flush errors yield a failure status. Processing errors retain their
@@ -220,24 +276,32 @@ guarantees.
   depends on the peer. Deadlines are event-loop scheduling bounds, not hard real-time
   guarantees; SIGKILL and crashes bypass cleanup. No unsubscribe is needed when
   closing the connection. Flush does not guarantee disk durability; each run replaces its file.
-- **Batch flushing:** the header flushes immediately; rows flush after 100 rows
-  or 250 ms by default, with both thresholds configurable. `flush_every_rows=1`
-  preserves immediate output. A single sink-owned Asio timer starts with the first
-  unflushed row; later rows do not postpone it, and it is cancelled when a batch
-  flushes or the sink closes. Empty sinks schedule no timers. This uses the stream's
-  existing buffer rather than retaining a separate queue of rows. The output target
-  now depends on Asio, while the stream formatter remains independent of it.
-  A timed flush error invokes one application error handler to stop the feed and
-  retain the original failure. Reducing flush frequency trades immediate visibility
-  and immediate error detection for less I/O overhead; actual speed is not measured.
-  Flushes remain synchronous and can delay the event loop. Timer dispatch is not a
-  hard real-time bound. Crashes/SIGKILL can lose pending rows, and a failed flush can
-  leave fewer complete rows than the final emitted-row counter reports.
+- **Batch flushing:** CSV rows are buffered because synchronous per-observation
+  flushes execute on the single event-loop thread and can unnecessarily stall
+  feed processing. Output flushes after either a configurable row threshold or
+  time interval, whichever comes first: 100 rows or 250 ms by default. This
+  amortizes filesystem I/O while targeting bounded output latency, including
+  when the feed becomes idle. Flushes remain synchronous, and slow callbacks can
+  delay timer dispatch; the interval is not a hard real-time guarantee. Actual
+  performance is not measured. `flush_every_rows=1` enables immediate output;
+  the header always flushes immediately.
+  A single sink-owned Asio timer starts with the first unflushed row; later rows
+  do not postpone it. Batch flushing and close cancel it, and empty sinks schedule
+  no timers. The stream's existing buffer holds rows without a separate queue.
+  The sink depends on Asio, while the stream formatter remains independent of it.
+  Timer-triggered flush failures occur after the originating `write_statistics()`
+  call has returned. They are reported asynchronously to the application, which
+  preserves the first fatal error and owns shutdown policy. Failures during
+  writes, row-triggered flushing or close return through `Result<void>` directly.
+  Batching delays visibility and error detection; crashes/SIGKILL can lose pending
+  rows. A failed flush can leave fewer complete rows than the emitted-row counter
+  reports, and flushing does not guarantee disk durability.
 - **TLS and ownership:** certificate and hostname verification are mandatory,
   using OpenSSL's default trust store. `FeedConnection` uniquely owns the session
   that hides Boost socket/TLS types; RAII closes the transport. `TickerFeed` owns
-  the connection and keeps its decoding handler alive until the connection is
-  destroyed. Text views are borrowed only during decoding; consumers receive a
+  the connection, which borrows the feed itself for raw event delivery. The feed
+  borrows its typed consumer until pending operations drain. Text views are
+  borrowed only during decoding; consumers receive a
   typed ticker update borrowed for one handler call.
   The application owns the feed and its handler until the event loop drains
   cancelled operations. This keeps ownership unique but requires callers to honor
@@ -254,8 +318,9 @@ guarantees.
   checks before conversion; named key constants remain. `symbols` and `output.path`
   are required. Unknown keys are ignored and duplicate keys use the last value;
   full schema policing is outside scope. Removed options can be silently ignored.
-  Feed/CSV policy validators live with their owning modules and are shared by
-  loading and construction. The feed's documented 365-day deadline limit also
+  Configuration validation composes module-owned symbol, feed, window and CSV
+  helpers before returning settings to the application; orchestration consumes
+  validated settings without repeating that pass. The feed's documented 365-day deadline limit also
   applies to direct C++ construction, avoiding oversized timer conversions.
   Explicit field-by-field reads retain error ordering and readable diagnostics;
   a generic field table would add machinery to this small startup path.
@@ -282,8 +347,9 @@ guarantees.
   rotation and collection belong to the environment.
 - **Tests:** isolated temporary files and local TLS servers exercise real boundaries.
   Connection tests cover raw text, opaque subscriptions, TLS, limits and lifecycle;
-  ticker tests cover decoding, filtering and typed delivery. Test servers use child processes with deadlines; production has no background
-  workers. Test cleanup is best effort and can leave files after an OS-level failure.
+  ticker tests cover decoding, filtering and typed delivery. Handler tests exercise
+  multiple sinks that expose only the narrow output contract. Test servers use
+  child processes with deadlines; production has no background workers. Test cleanup is best effort and can leave files after an OS-level failure.
 
 Fixed policies: comma-only CSV, exchange-time windows with an open lower boundary,
 ignored retained duplicates, and fatal malformed data/decreasing timestamps.
@@ -291,7 +357,7 @@ Sequence recovery, runtime reload and crash durability are outside scope.
 
 ## Verification scope
 
-The recorded macOS run passed **136/136 tests**, and the independent fixture
+The recorded macOS run passed **141/141 tests**, and the independent fixture
 verifier passed. The current live capture contains **96 verified rows**, with
 40 rows visible before shutdown and a successful graceful SIGTERM shutdown.
 Linux CI results are not yet confirmed.

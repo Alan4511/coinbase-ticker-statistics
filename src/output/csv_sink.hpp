@@ -18,11 +18,14 @@ namespace coinbase_ticker_statistics {
  */
 class CsvSink {
   public:
-    CsvSink(boost::asio::io_context &io, CsvConfig config, std::function<void(Error)> on_flush_error);
+    CsvSink(boost::asio::io_context &io, CsvConfig config);
     CsvSink(const CsvSink &) = delete;
     CsvSink &operator=(const CsvSink &) = delete;
 
     [[nodiscard]] const CsvConfig &config() const noexcept;
+
+    /** Install the application error reporter before open(); it must outlive pending operations. */
+    void set_flush_error_handler(std::function<void(Error)> on_flush_error);
 
     /** Create directories, replace the file and publish its header. */
     [[nodiscard]] Result<void> open();

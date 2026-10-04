@@ -4,6 +4,10 @@ A C++23 application that consumes Coinbase's public ticker feed and writes
 mean, median, low and high to CSV for each subscribed symbol. Each symbol has
 an independent sliding window, defaulting to five minutes. No API key is required.
 
+One Asio event loop coordinates the feed, statistics and output. The application
+owns lifecycle; transport, ticker decoding and calculations have separate owners.
+A narrow output contract lets other sinks reuse the statistics and event routing.
+
 ## Build
 
 Requires a C++23 toolchain, CMake 3.20+ and OpenSSL 3 development files.

@@ -48,27 +48,6 @@ const std::string ticker =
 const std::string header = "time,symbol,trade_id,trade_price,count,mean,median,low,high\n";
 const std::string row = "2026-01-02T03:04:05.000000000Z,BTC-USD,42,1.25,1,1.25,1.25,1.25,1.25\n";
 
-TEST(Application, InvalidSettingsDoNotTruncateExistingOutput) {
-    test::TemporaryDirectory directory;
-    const auto path = directory.file("existing.csv");
-    test::write_file(path, "previous run\n");
-    auto config = configuration(path);
-    std::ostringstream diagnostics;
-    Logger logger(diagnostics);
-    config.window.duration = Duration{0};
-    ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::InvalidConfiguration);
-    config.window.duration = Duration{300};
-    config.symbols = {"invalid-product"};
-    ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::InvalidConfiguration);
-    config.symbols = {"BTC-USD"};
-    config.output.flush_every_rows = 0;
-    ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::InvalidConfiguration);
-    config.output.flush_every_rows = 100;
-    config.output.flush_interval = std::chrono::milliseconds{0};
-    ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::InvalidConfiguration);
-    EXPECT_EQ(test::read_file(path), "previous run\n");
-}
-
 TEST(Application, WritesCsvAndReportsPeerCloseWithFinalCounts) {
     test::TemporaryDirectory directory;
     auto config = configuration(directory.file("nested/output.csv"));
@@ -78,6 +57,7 @@ TEST(Application, WritesCsvAndReportsPeerCloseWithFinalCounts) {
     config.feed = exchange.config();
     std::ostringstream diagnostics;
     Logger logger(diagnostics);
+    ASSERT_RESULT_OK(validate_config(config));
     ASSERT_RESULT_OK(run_application(config, logger));
     EXPECT_EQ(test::read_file(config.output.path), header + row);
     EXPECT_NE(diagnostics.str().find("stopped: status=success received_messages=3 ticker_updates=2 emitted_rows=1 "
@@ -94,6 +74,7 @@ TEST(Application, MalformedTickerFailsAndFlushesPreviousRows) {
     config.feed = exchange.config();
     std::ostringstream diagnostics;
     Logger logger(diagnostics);
+    ASSERT_RESULT_OK(validate_config(config));
     ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::InvalidInput);
     EXPECT_EQ(test::read_file(config.output.path), header + row);
     EXPECT_NE(
@@ -111,6 +92,7 @@ TEST(Application, FailedTlsConnectionPreservesExistingOutput) {
     config.feed = exchange.config();
     std::ostringstream diagnostics;
     Logger logger(diagnostics);
+    ASSERT_RESULT_OK(validate_config(config));
     ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::Transport);
     EXPECT_EQ(test::read_file(config.output.path), "previous run\n");
 }
@@ -125,6 +107,7 @@ TEST(Application, StatisticsFailureStopsTheFeedAndFlushesPreviousRows) {
     config.feed = exchange.config();
     std::ostringstream diagnostics;
     Logger logger(diagnostics);
+    ASSERT_RESULT_OK(validate_config(config));
     ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::OutOfOrderTimestamp);
     EXPECT_EQ(test::read_file(config.output.path), header + row);
     EXPECT_NE(
@@ -139,6 +122,8 @@ class ApplicationProcess {
     ApplicationProcess(const Config &config,
                        const std::filesystem::path &diagnostics_path,
                        std::optional<std::size_t> file_size_limit = std::nullopt) {
+        if (auto valid = validate_config(config); !valid)
+            throw std::runtime_error("invalid test application configuration: " + valid.error().message);
         pid_ = ::fork();
         if (pid_ < 0)
             throw std::runtime_error("cannot fork test application");

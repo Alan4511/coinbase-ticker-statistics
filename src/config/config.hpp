@@ -22,10 +22,10 @@ struct Config {
 /** Coordinate module policies and application constraints without starting I/O. */
 [[nodiscard]] Result<void> validate_config(const Config &config);
 
-/** Require symbols and an output path; validate optional settings without coercion. */
+/** Parse and validate all settings without coercion; success satisfies run_application's precondition. */
 [[nodiscard]] Result<Config> parse_config(std::string_view text);
 
-/** Load JSON; resolve output paths relative to the configuration file. */
+/** Load validated JSON and resolve output paths; success satisfies run_application's precondition. */
 [[nodiscard]] Result<Config> load_config(const std::filesystem::path &path);
 
 } // namespace coinbase_ticker_statistics

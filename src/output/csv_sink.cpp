@@ -5,12 +5,16 @@
 
 namespace coinbase_ticker_statistics {
 
-CsvSink::CsvSink(boost::asio::io_context &io, CsvConfig config, std::function<void(Error)> on_flush_error)
-    : config_(std::move(config)), on_flush_error_(std::move(on_flush_error)), flush_timer_(io), writer_(stream_) {
+CsvSink::CsvSink(boost::asio::io_context &io, CsvConfig config)
+    : config_(std::move(config)), flush_timer_(io), writer_(stream_) {
 }
 
 const CsvConfig &CsvSink::config() const noexcept {
     return config_;
+}
+
+void CsvSink::set_flush_error_handler(std::function<void(Error)> on_flush_error) {
+    on_flush_error_ = std::move(on_flush_error);
 }
 
 Result<void> CsvSink::open() {
