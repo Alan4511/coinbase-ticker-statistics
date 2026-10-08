@@ -5,7 +5,7 @@ endif()
 
 find_package(OpenSSL 3.0 REQUIRED)
 find_package(Threads REQUIRED)
-find_package(Boost 1.83 QUIET CONFIG)
+find_package(Boost 1.88 QUIET CONFIG)
 
 if(NOT TARGET Boost::headers)
     # Beast and Asio need no Boost binaries.
@@ -20,14 +20,14 @@ if(NOT TARGET Boost::headers)
     add_library(Boost::headers ALIAS coinbase_boost_headers)
 endif()
 
-set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-set(JSON_Install OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.12.0
-    GIT_SHALLOW TRUE
+# Consume only Glaze's headers; its upstream build requires CMake 3.31.
+FetchContent_Declare(glaze
+    URL https://codeload.github.com/stephenberry/glaze/tar.gz/refs/tags/v9.0.0
+    URL_HASH SHA256=dd7b033c5bf6e4308615bb7834c541291d5b20f64121d9a68222a39414635517
+    SOURCE_SUBDIR header_only
 )
-FetchContent_MakeAvailable(nlohmann_json)
-# Keep strict project warnings from being applied to vendor implementation details.
-get_target_property(json_include_dirs nlohmann_json INTERFACE_INCLUDE_DIRECTORIES)
-set_property(TARGET nlohmann_json PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${json_include_dirs}")
+FetchContent_MakeAvailable(glaze)
+add_library(coinbase_glaze INTERFACE)
+target_include_directories(coinbase_glaze SYSTEM INTERFACE "${glaze_SOURCE_DIR}/include")
+target_compile_features(coinbase_glaze INTERFACE cxx_std_23)
+add_library(glaze::glaze ALIAS coinbase_glaze)

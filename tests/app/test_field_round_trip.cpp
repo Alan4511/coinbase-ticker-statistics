@@ -7,36 +7,67 @@
 #include <array>
 #include <chrono>
 #include <limits>
+#include <random>
+#include <string>
 #include <string_view>
 
 namespace coinbase_ticker_statistics {
 namespace {
 
-TEST(Price, ParsesAndRoundTripsFullPrecision) {
-    EXPECT_EQ(parse_price("123.45"), Price{123.45L});
-    EXPECT_EQ(parse_price("0.000000000000123456789"), Price{0.000000000000123456789L});
-    EXPECT_EQ(parse_price("1e3"), Price{1000});
-    EXPECT_EQ(parse_price("0"), Price{0});
-    for (const Price price : {0.1L,
-                              12345.67890123456789L,
-                              std::numeric_limits<Price>::min(),
-                              std::numeric_limits<Price>::denorm_min(),
-                              std::numeric_limits<Price>::max(),
-                              Price{1} + std::numeric_limits<Price>::epsilon()}) {
-        SCOPED_TRACE(price);
-        ASSERT_RESULT_VALUE(text, format_price(price));
-        EXPECT_EQ(parse_price(text), price);
+TEST(Price, ParsesAndRoundTripsExactDecimalTicks) {
+    struct Case {
+        std::string_view text;
+        std::int64_t ticks;
+        std::string_view canonical;
+    };
+    const Case cases[]{{"123.45", 12'345'000'000, "123.45"},
+                       {"0.00000001", 1, "0.00000001"},
+                       {"0.100000000000", 10'000'000, "0.1"},
+                       {"0000123.450000", 12'345'000'000, "123.45"},
+                       {"1e3", 100'000'000'000, "1000"},
+                       {"1.2345e+2", 12'345'000'000, "123.45"},
+                       {"1234500000000e-10", 12'345'000'000, "123.45"},
+                       {"100e-10", 1, "0.00000001"},
+                       {"0e99999999999999999999", 0, "0"},
+                       {"0", 0, "0"},
+                       {"92233720368.54775807", std::numeric_limits<std::int64_t>::max(), "92233720368.54775807"}};
+    for (const auto &[text, ticks, canonical] : cases) {
+        SCOPED_TRACE(text);
+        ASSERT_RESULT_VALUE(value, parse_price(text));
+        EXPECT_EQ(value, Price{ticks});
+        ASSERT_RESULT_VALUE(formatted, format_price(value));
+        EXPECT_EQ(formatted, canonical);
+        EXPECT_EQ(parse_price(formatted), value);
     }
-    EXPECT_EQ(format_price(Price{-0.0L}), "0");
-    for (const auto text : {"", "-1", "+1", ".5", "1.", " 1", "1 ", "NaN", "Inf", "1.2.3", "1e", "1e+"}) {
+    std::mt19937_64 generator{0xDEC1A1};
+    std::uniform_int_distribution<std::int64_t> ticks(0, std::numeric_limits<std::int64_t>::max());
+    for (unsigned iteration = 0; iteration < 1000; ++iteration) {
+        const Price expected{ticks(generator)};
+        const auto whole = std::to_string(expected.ticks / Price::ticks_per_unit);
+        const auto fraction = std::to_string(Price::ticks_per_unit + expected.ticks % Price::ticks_per_unit).substr(1);
+        const auto text = whole + '.' + fraction;
+        SCOPED_TRACE(text);
+        EXPECT_EQ(parse_price(text + "000e+0"), expected);
+        EXPECT_EQ(parse_price(std::to_string(expected.ticks) + "e-8"), expected);
+        ASSERT_RESULT_VALUE(formatted, format_price(expected));
+        auto canonical = text;
+        while (canonical.back() == '0')
+            canonical.pop_back();
+        if (canonical.back() == '.')
+            canonical.pop_back();
+        EXPECT_EQ(formatted, canonical);
+    }
+    for (const auto text : {"", "-1", "+1", ".5", "1.", " 1", "1 ", "NaN", "Inf", "1.2.3", "1e", "1e+",
+                           "0e999999x", "0.000000000x"}) {
         SCOPED_TRACE(text);
         ASSERT_RESULT_ERROR(parse_price(text), ErrorCode::InvalidInput);
     }
-    ASSERT_RESULT_ERROR(parse_price("1e99999"), ErrorCode::OutOfRange);
-    ASSERT_RESULT_ERROR(parse_price("1e-99999"), ErrorCode::OutOfRange);
-    ASSERT_RESULT_ERROR(format_price(-1), ErrorCode::InvalidInput);
-    ASSERT_RESULT_ERROR(format_price(std::numeric_limits<Price>::infinity()), ErrorCode::InvalidInput);
-    ASSERT_RESULT_ERROR(format_price(std::numeric_limits<Price>::quiet_NaN()), ErrorCode::InvalidInput);
+    for (const auto text : {"1e99999", "1e-99999", "1e99999999999999999999", "0.000000001", "1.000000001",
+                           "92233720368.54775808", "92233720369", "999999999999999999999"}) {
+        SCOPED_TRACE(text);
+        ASSERT_RESULT_ERROR(parse_price(text), ErrorCode::OutOfRange);
+    }
+    ASSERT_RESULT_ERROR(format_price(Price{-1}), ErrorCode::InvalidInput);
 }
 
 TEST(Timestamp, ParsesFormatsAndValidatesUtc) {
@@ -92,9 +123,6 @@ TEST(Timestamp, ParsesFormatsAndValidatesUtc) {
         SCOPED_TRACE(text);
         ASSERT_RESULT_ERROR(parse_utc_timestamp(text), ErrorCode::InvalidInput) << text;
     }
-    ASSERT_RESULT_ERROR(format_price(-1), ErrorCode::InvalidInput);
-    ASSERT_RESULT_ERROR(format_price(std::numeric_limits<Price>::infinity()), ErrorCode::InvalidInput);
-    ASSERT_RESULT_ERROR(format_price(std::numeric_limits<Price>::quiet_NaN()), ErrorCode::InvalidInput);
 }
 
 } // namespace

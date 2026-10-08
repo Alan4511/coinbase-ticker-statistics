@@ -64,7 +64,7 @@ Result<void> CsvWriter::write_statistics(const StatisticsUpdate &update) {
     row_ += *timestamp;
     row_ += ',';
     append_field(row_, update.ticker_update.symbol);
-    const auto append_numeric_field = [this](auto value) -> Result<void> {
+    const auto append_numeric_field = [this](const auto &value) -> Result<void> {
         row_ += ',';
         return append_number(row_, value);
     };
@@ -75,7 +75,11 @@ Result<void> CsvWriter::write_statistics(const StatisticsUpdate &update) {
     if (auto result = append_numeric_field(update.statistics.count); !result)
         return result;
     const auto &statistics = update.statistics;
-    for (const auto value : {statistics.mean, statistics.median, statistics.low, statistics.high}) {
+    for (const auto &value : {statistics.mean, statistics.median}) {
+        if (auto result = append_numeric_field(value); !result)
+            return result;
+    }
+    for (const auto value : {statistics.low, statistics.high}) {
         if (auto result = append_numeric_field(value); !result)
             return result;
     }

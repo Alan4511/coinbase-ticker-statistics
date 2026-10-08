@@ -1,12 +1,12 @@
 #pragma once
 
-#include <result.hpp>
-#include <types.hpp>
+#include <common/result.hpp>
+#include <common/types.hpp>
 
 #include <string_view>
 
 namespace coinbase_ticker_statistics {
-/** Parse a finite, nonnegative decimal/scientific price without narrowing through double. */
+/** Parse an exact nonnegative decimal/scientific price on the eight-decimal tick grid. */
 [[nodiscard]] Result<Price> parse_price(std::string_view text);
 
 /**

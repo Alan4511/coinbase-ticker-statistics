@@ -1,21 +1,14 @@
 #include "feed/subscription.hpp"
+#include "feed/json_meta.hpp"
 
-#include <nlohmann/json.hpp>
+#include <glaze/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <string_view>
 
 namespace coinbase_ticker_statistics {
 namespace {
-using Json = nlohmann::json;
-
-namespace protocol {
-constexpr auto type = "type";
-constexpr auto subscribe = "subscribe";
-constexpr auto product_ids = "product_ids";
-constexpr auto channels = "channels";
-constexpr auto ticker = "ticker";
-} // namespace protocol
 
 bool is_valid_product_id(std::string_view symbol) {
     const auto is_product_character = [](char character) {
@@ -27,11 +20,11 @@ bool is_valid_product_id(std::string_view symbol) {
 
 } // namespace
 
-Result<void> validate_product_ids(const Symbols &symbols) {
+Result<void> validate(const Symbols &symbols) {
     if (symbols.empty()) {
         return fail(ErrorCode::InvalidConfiguration, "ticker subscription requires at least one product ID");
     }
-    // Product IDs are protocol identifiers, not arbitrary text. This also guarantees dump()
+    // Product IDs are protocol identifiers, not arbitrary text. This also guarantees JSON encoding
     // cannot encounter invalid UTF-8 while serializing a caller-provided subscription.
     for (const auto &symbol : symbols) {
         if (!is_valid_product_id(symbol))
@@ -41,12 +34,14 @@ Result<void> validate_product_ids(const Symbols &symbols) {
 }
 
 Result<std::string> encode_ticker_subscription(const Symbols &symbols) {
-    if (auto valid = validate_product_ids(symbols); !valid)
+    if (auto valid = validate(symbols); !valid)
         return std::unexpected(valid.error());
-    return Json{{protocol::type, protocol::subscribe},
-                {protocol::product_ids, symbols},
-                {protocol::channels, Json::array({protocol::ticker})}}
-        .dump();
+    using namespace feed_json;
+    const SubscriptionRequest request{key::subscribe, symbols, std::array{std::string_view{key::ticker}}};
+    auto encoded = glz::write_json(request);
+    if (!encoded)
+        return fail(ErrorCode::Protocol, "cannot encode ticker subscription: " + glz::format_error(encoded.error()));
+    return std::move(*encoded);
 }
 
 } // namespace coinbase_ticker_statistics

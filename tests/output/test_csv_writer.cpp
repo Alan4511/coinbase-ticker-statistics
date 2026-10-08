@@ -1,6 +1,7 @@
 #include "test_files.hpp"
 #include "test_result.hpp"
 #include <output/csv_writer.hpp>
+#include <output/format_fields.hpp>
 
 #include <gtest/gtest.h>
 
@@ -25,7 +26,8 @@ StatisticsUpdate sample_update() {
     const Timestamp exchange_time = std::chrono::sys_days{std::chrono::year{2026} / std::chrono::January / 2} +
                                     std::chrono::hours{3} + std::chrono::minutes{4} + std::chrono::seconds{5} +
                                     std::chrono::nanoseconds{123456789};
-    return {{exchange_time, "BTC-USD", 42, Price{1.25L}}, {2, 1.5L, 1.5L, Price{1.25L}, Price{1.75L}}};
+    return {{exchange_time, "BTC-USD", 42, Price{125'000'000}},
+            {2, {150'000'000, 1}, {150'000'000, 1}, Price{125'000'000}, Price{175'000'000}}};
 }
 
 class DecimalComma : public std::numpunct<char> {
@@ -53,16 +55,43 @@ TEST(CsvWriter, WritesEscapedRoundTrippableRows) {
     update.ticker_update.symbol = "BTC,\"USD\"\r\n";
     update.ticker_update.trade_id = std::numeric_limits<TradeId>::max();
     update.statistics.count = std::numeric_limits<SampleCount>::max();
-    update.ticker_update.price = 12345.67890123456789L;
-    std::ostringstream independent_price;
-    independent_price.imbue(std::locale::classic());
-    independent_price << std::setprecision(std::numeric_limits<Price>::max_digits10) << update.ticker_update.price;
+    update.ticker_update.price = Price{1'234'567'890'123};
     ASSERT_RESULT_OK(writer.write_statistics(update));
     ASSERT_RESULT_OK(writer.flush());
     const auto escaped_row = "2026-01-02T03:04:05.123456789Z,\"BTC,\"\"USD\"\"\r\n\"," +
-                             std::to_string(update.ticker_update.trade_id) + ',' + independent_price.str() + ',' +
+                             std::to_string(update.ticker_update.trade_id) + ",12345.67890123," +
                              std::to_string(update.statistics.count) + ",1.5,1.5,1.25,1.75\n";
     EXPECT_EQ(stream.str(), std::string(expected_header) + std::string(expected_row) + escaped_row);
+}
+
+TEST(NumericFormatting, RoundsExactStatisticsToNearestEvenTick) {
+    struct Case {
+        Statistic statistic;
+        std::string_view expected;
+    };
+    const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    const auto maximum_count = std::numeric_limits<SampleCount>::max();
+    const Case cases[]{{{1, 2}, "0"},
+                       {{3, 2}, "0.00000002"},
+                       {{5, 2}, "0.00000002"},
+                       {{1, 3}, "0"},
+                       {{2, 3}, "0.00000001"},
+                       {{199'999'999, 2}, "1"},
+                       {{PriceSum{maximum} * maximum_count, maximum_count}, "92233720368.54775807"},
+                       {{PriceSum{maximum} * 2 - 1, 2}, "92233720368.54775806"},
+                       {{maximum_count - 1, maximum_count}, "0.00000001"}};
+    for (const auto &[statistic, expected] : cases) {
+        SCOPED_TRACE(expected);
+        std::string text;
+        ASSERT_RESULT_OK(append_number(text, statistic));
+        EXPECT_EQ(text, expected);
+    }
+    std::string text = "unchanged";
+    ASSERT_RESULT_ERROR(append_number(text, Statistic{1, 0}), ErrorCode::InvalidInput);
+    ASSERT_RESULT_ERROR(append_number(text, Statistic{PriceSum{maximum} * 2 + 1, 2}), ErrorCode::OutOfRange);
+    ASSERT_RESULT_ERROR(append_number(text, Statistic{std::numeric_limits<PriceSum>::max(), 1}), ErrorCode::OutOfRange);
+    ASSERT_RESULT_ERROR(append_number(text, Price{-1}), ErrorCode::InvalidInput);
+    EXPECT_EQ(text, "unchanged");
 }
 
 class FailingBuffer : public std::stringbuf {

@@ -19,7 +19,6 @@ linux-tests:
     - cmake --build build --parallel 2
     - ctest --test-dir build --output-on-failure --output-junit "$CI_PROJECT_DIR/build/linux-tests.xml" --output-log "$CI_PROJECT_DIR/build/linux-tests.log"
     - python3 tools/verify_csv.py --config data/fixture_config.json --require-expiration
-    - ./build/bin/coinbase_ticker_statistics_app --help
   artifacts:
     when: always
     expire_in: 1 week
@@ -28,4 +27,3 @@ linux-tests:
     paths:
       - build/linux-tests.log
       - build/Testing/Temporary/LastTest.log
-

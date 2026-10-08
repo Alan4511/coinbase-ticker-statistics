@@ -1,6 +1,6 @@
 #pragma once
 
-#include <result.hpp>
+#include <common/result.hpp>
 
 #include <gtest/gtest.h>
 

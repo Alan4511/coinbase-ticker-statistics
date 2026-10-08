@@ -1,7 +1,7 @@
 #pragma once
 
+#include <common/types.hpp>
 #include <feed/transport/feed_config.hpp>
-#include <types.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl.hpp>
@@ -9,7 +9,9 @@
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/websocket/ssl.hpp>
-#include <nlohmann/json.hpp>
+#include <glaze/json.hpp>
+
+#include <format>
 
 #include <csignal>
 #include <cstdlib>
@@ -67,10 +69,10 @@ class LoopbackExchange {
     LoopbackExchange(const Symbols &symbols,
                      const std::vector<std::string> &messages,
                      ExchangeReply reply = ExchangeReply::Text)
-        : LoopbackExchange(
-              nlohmann::json{{"type", "subscribe"}, {"product_ids", symbols}, {"channels", {"ticker"}}}.dump(),
-              messages,
-              reply) {
+        : LoopbackExchange(std::format(R"({{"type":"subscribe","product_ids":{},"channels":["ticker"]}})",
+                                       glz::write_json(symbols).value()),
+                           messages,
+                           reply) {
     }
 
     LoopbackExchange(std::string expected_subscription,

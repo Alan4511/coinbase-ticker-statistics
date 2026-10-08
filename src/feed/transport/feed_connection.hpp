@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feed/transport/feed_config.hpp"
-#include <result.hpp>
+#include <common/result.hpp>
 
 #include <boost/asio/io_context.hpp>
 

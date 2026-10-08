@@ -215,7 +215,7 @@ class FeedConnection::Session {
 
 Result<std::unique_ptr<FeedConnection>>
 FeedConnection::create_session(net::io_context &io, FeedConfig config, std::string subscription, Events events) {
-    if (auto valid = validate_feed_config(config); !valid)
+    if (auto valid = validate(config); !valid)
         return std::unexpected(std::move(valid.error()));
     try {
         auto session = std::make_unique<Session>(io, std::move(config), std::move(subscription), std::move(events));

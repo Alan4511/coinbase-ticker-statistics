@@ -4,13 +4,15 @@
 
 - CMake 3.20 or later.
 - A C++23 compiler and standard library supporting `std::expected`, including
-  monadic operations. Use GCC 14+, Clang 19+ with a compatible standard library,
+  monadic operations, and chrono formatting with `std::format`.
+  Use GCC 14+, Clang 19+ with a compatible standard library,
   or AppleClang 16+.
 - OpenSSL 3 development files.
 
-CMake uses installed Boost 1.83+ or fetches pinned Boost 1.88.0 headers,
-nlohmann-json 3.12.0 and GoogleTest 1.18.0. The first configuration needs network
-access to fetch dependencies.
+CMake uses installed Boost 1.88+ or fetches pinned Boost 1.88.0, and fetches
+Glaze 9.0.0 headers, and GoogleTest 1.18.0 for tests. Glaze is consumed as a
+header-only dependency, so its upstream CMake minimum does not apply. The first
+configuration needs network access to fetch dependencies.
 
 ## Platform setup
 

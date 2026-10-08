@@ -2,8 +2,8 @@
 
 #include "statistics/sliding_window.hpp"
 #include "statistics/window_options.hpp"
-#include <result.hpp>
-#include <types.hpp>
+#include <common/result.hpp>
+#include <common/types.hpp>
 
 #include <optional>
 #include <unordered_map>

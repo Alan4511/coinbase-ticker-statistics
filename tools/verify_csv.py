@@ -13,12 +13,14 @@ import json
 import sys
 from collections import Counter, defaultdict, deque
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from pathlib import Path
 
 
 COLUMNS = ["time", "symbol", "trade_id", "trade_price", "count", "mean", "median", "low", "high"]
 NANOSECONDS_PER_SECOND = 1_000_000_000
+PRICE_TICK = Decimal("0.00000001")
+MAXIMUM_PRICE = Decimal("92233720368.54775807")
 
 
 def timestamp_ns(text):
@@ -32,7 +34,7 @@ def timestamp_ns(text):
     return calendar.timegm(instant.utctimetuple()) * NANOSECONDS_PER_SECOND + int(fraction.ljust(9, "0"))
 
 
-def verify(path, config, require_expiration, relative_tolerance, absolute_tolerance):
+def verify(path, config, require_expiration):
     """Check every column's meaning and report observations/expirations by symbol."""
     window = config.get("window", {})
     duration = window.get("duration_seconds", 300) * NANOSECONDS_PER_SECOND
@@ -71,26 +73,22 @@ def verify(path, config, require_expiration, relative_tolerance, absolute_tolera
                 if any(item[1] == trade_id for item in queue):
                     raise ValueError("a duplicate was emitted despite its configured policy")
                 price = Decimal(row["trade_price"])
-                if not price.is_finite() or price < 0:
-                    raise ValueError("invalid price")
+                if (not price.is_finite() or not 0 <= price <= MAXIMUM_PRICE
+                        or price != price.quantize(PRICE_TICK)):
+                    raise ValueError("price is outside the supported eight-decimal grid")
                 queue.append((current, trade_id, price))
                 prices = sorted(item[2] for item in queue)
                 count = len(prices)
                 middle = count // 2
                 median = prices[middle] if count % 2 else (prices[middle - 1] + prices[middle]) / 2
                 mean = sum(prices, Decimal(0)) / count
-                expected = {
-                    "count": str(count),
-
-                }
-                for field, value in expected.items():
-                    if row[field] != value:
-                        raise ValueError("{} expected {}, found {}".format(field, value, row[field]))
+                if row["count"] != str(count):
+                    raise ValueError("count expected {}, found {}".format(count, row["count"]))
                 for field, reference in (("mean", mean), ("median", median)):
+                    expected = reference.quantize(PRICE_TICK, rounding=ROUND_HALF_EVEN)
                     actual = Decimal(row[field])
-                    tolerance = max(absolute_tolerance, relative_tolerance * abs(reference))
-                    if not actual.is_finite() or abs(actual - reference) > tolerance:
-                        raise ValueError("{} differs beyond tolerance {}".format(field, tolerance))
+                    if not actual.is_finite() or actual != expected:
+                        raise ValueError("{} expected {}, found {}".format(field, expected, actual))
                 if Decimal(row["low"]) != prices[0] or Decimal(row["high"]) != prices[-1]:
                     raise ValueError("incorrect low/high")
                 observations[symbol] += 1
@@ -112,17 +110,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--require-expiration", action="store_true")
-    parser.add_argument("--relative-tolerance", type=Decimal, default=Decimal("1e-12"))
-    parser.add_argument("--absolute-tolerance", type=Decimal, default=Decimal("1e-15"))
     arguments = parser.parse_args()
     try:
-        if any(not value.is_finite() or value < 0 for value in (arguments.relative_tolerance, arguments.absolute_tolerance)):
-            raise ValueError("tolerances must be finite and nonnegative")
         with arguments.config.open(encoding="utf-8") as source:
             config = json.load(source)
         path = arguments.config.parent / config["output"]["path"]
-        verify(path.resolve(), config, arguments.require_expiration,
-               arguments.relative_tolerance, arguments.absolute_tolerance)
+        verify(path.resolve(), config, arguments.require_expiration)
     except (OSError, ValueError, KeyError, ArithmeticError) as error:
         print("FAIL: " + str(error), file=sys.stderr)
         return 1

@@ -9,9 +9,9 @@ namespace {
 
 static_assert(!std::is_polymorphic_v<StatisticsProcessor>);
 
-TickerUpdate ticker_update(Symbol symbol, TradeId id, Price price, Duration offset) {
+TickerUpdate ticker_update(Symbol symbol, TradeId id, std::int64_t units, Duration offset) {
     const Timestamp exchange_time = std::chrono::sys_days{std::chrono::year{2026} / 10 / 3} + offset;
-    return {exchange_time, std::move(symbol), id, price};
+    return {exchange_time, std::move(symbol), id, Price{units * Price::ticks_per_unit}};
 }
 
 TEST(StatisticsProcessor, RoutesSymbolsAndDistinguishesFilteredEventsFromErrors) {
@@ -21,11 +21,13 @@ TEST(StatisticsProcessor, RoutesSymbolsAndDistinguishesFilteredEventsFromErrors)
     ASSERT_RESULT_VALUE(eth, processor.on_update(ticker_update("ETH-USD", 1, 900, Duration{1})));
     ASSERT_TRUE(eth);
     EXPECT_EQ(eth->statistics.count, 1U);
-    EXPECT_EQ(eth->statistics.mean, 900);
+    EXPECT_EQ(eth->statistics.mean.numerator,
+              PriceSum{900 * Price::ticks_per_unit} * eth->statistics.mean.denominator);
     ASSERT_RESULT_VALUE(second_btc, processor.on_update(ticker_update("BTC-USD", 2, 200, Duration{2})));
     ASSERT_TRUE(second_btc);
     EXPECT_EQ(second_btc->statistics.count, 2U);
-    EXPECT_EQ(second_btc->statistics.mean, 150);
+    EXPECT_EQ(second_btc->statistics.mean.numerator,
+              PriceSum{150 * Price::ticks_per_unit} * second_btc->statistics.mean.denominator);
     EXPECT_EQ(second_btc->ticker_update.symbol, "BTC-USD");
     EXPECT_EQ(second_btc->ticker_update.trade_id, 2U);
     ASSERT_RESULT_VALUE(duplicate, processor.on_update(ticker_update("BTC-USD", 2, 999, Duration{2})));
@@ -37,12 +39,14 @@ TEST(StatisticsProcessor, RoutesSymbolsAndDistinguishesFilteredEventsFromErrors)
     ASSERT_RESULT_VALUE(expired, processor.on_update(ticker_update("BTC-USD", 3, 300, Duration{302})));
     ASSERT_TRUE(expired);
     EXPECT_EQ(expired->statistics.count, 1U);
-    EXPECT_EQ(expired->statistics.mean, 300);
+    EXPECT_EQ(expired->statistics.mean.numerator,
+              PriceSum{300 * Price::ticks_per_unit} * expired->statistics.mean.denominator);
     // Advancing BTC's window must not expire the independently timed ETH window.
     ASSERT_RESULT_VALUE(next_eth, processor.on_update(ticker_update("ETH-USD", 2, 100, Duration{2})));
     ASSERT_TRUE(next_eth);
     EXPECT_EQ(next_eth->statistics.count, 2U);
-    EXPECT_EQ(next_eth->statistics.mean, 500);
+    EXPECT_EQ(next_eth->statistics.mean.numerator,
+              PriceSum{500 * Price::ticks_per_unit} * next_eth->statistics.mean.denominator);
 }
 
 } // namespace

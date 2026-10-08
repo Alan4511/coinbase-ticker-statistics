@@ -58,8 +58,11 @@ forgotten after expiration. Idle windows expire on the next accepted event.
 All accepted samples remain until expiration. There is no sample-count cap;
 memory depends on arrival rate and window duration. The old
 `max_observations_per_symbol` key has no effect. Mean weights each ticker equally,
-not by volume or elapsed time. Prices/statistics use `long double`, with no
-scale or rounding settings; see the [numeric tradeoff](DESIGN_DECISIONS.md#numeric-model).
+not by volume or elapsed time. Prices use eight-decimal integer ticks in the
+range `0..92233720368.54775807`; finer nonzero decimal places are rejected.
+Mean and median are calculated exactly and rounded to eight decimal places only
+for CSV, using nearest, ties-to-even. Scale and rounding are fixed policies;
+see the [numeric tradeoff](DESIGN_DECISIONS.md#numeric-model).
 
 ## Output
 
@@ -91,9 +94,19 @@ statistics and the generic event handler stay unchanged. `OutputSink` does not
 provide a runtime sink registry or configurable sink factory.
 
 Columns are `time,symbol,trade_id,trade_price,count,mean,median,low,high`.
-Time is UTC exchange time with nine fractional digits. Numbers use `max_digits10`
-significant digits, possibly scientific notation, independent of the stream locale.
+Time is UTC exchange time with nine fractional digits. Prices and statistics use
+ordinary decimal notation with up to eight fractional digits, independent of the
+stream locale. Insignificant trailing zeros are omitted.
 The delimiter is a comma; quotes, commas and line endings are escaped.
+
+Configuration parsing ignores unknown keys but validates their JSON syntax.
+Known fields must have the documented types. Native checked integer conversion
+accepts exact positive-exponent forms such as `3e2`; fractional values and overflow
+are rejected. Glaze's integer conversion does not accept decimal-point or negative-
+exponent spellings. Repeated valid keys use the last value, including
+complete replacement of repeated sections. An invalid earlier occurrence still
+fails. Files are read into memory and parsed through the same whole-document
+boundary as message buffers. Malformed or trailing content is rejected.
 
 ## Process lifetime and malformed messages
 

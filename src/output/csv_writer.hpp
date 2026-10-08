@@ -1,8 +1,8 @@
 #pragma once
 
 #include "output/sink.hpp"
-#include <result.hpp>
-#include <types.hpp>
+#include <common/result.hpp>
+#include <common/types.hpp>
 
 #include <ostream>
 #include <string>

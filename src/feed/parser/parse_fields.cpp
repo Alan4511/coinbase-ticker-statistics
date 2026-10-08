@@ -2,10 +2,8 @@
 
 #include <algorithm>
 #include <charconv>
-#include <cmath>
-#include <concepts>
-#include <locale>
-#include <sstream>
+#include <limits>
+#include <utility>
 
 namespace coinbase_ticker_statistics {
 namespace {
@@ -32,38 +30,51 @@ unsigned parse_decimal_digits(std::string_view text, std::size_t start, std::siz
     return result;
 }
 
-/** Some supported libc++ versions lack floating-point from_chars. Never narrow to double. */
-template <std::floating_point Number>
-Result<Number> convert_decimal_price(std::string_view text) {
-    Number value{};
-    if constexpr (requires { std::from_chars(text.data(), text.data() + text.size(), value); }) {
-        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-        if (error == std::errc::result_out_of_range)
-            return fail(ErrorCode::OutOfRange, "Price overflow or underflow");
-        if (error != std::errc{} || end != text.data() + text.size())
-            return fail(ErrorCode::InvalidInput, "Invalid price syntax");
+Result<Price> convert_decimal_price(std::string_view significand, std::size_t fractional_digits, int exponent) {
+    // Removing insignificant zeros admits extra decimal places only when they
+    // do not change the value. No input price is rounded to fit the tick grid.
+    std::size_t trailing_zeros{};
+    while (!significand.empty() && (significand.back() == '0' || significand.back() == '.')) {
+        trailing_zeros += significand.back() == '0';
+        significand.remove_suffix(1);
     }
-    else {
-        std::istringstream input{std::string(text)};
-        input.imbue(std::locale::classic());
-        input >> std::noskipws >> value;
-        // libc++ sets failbit even when conversion produced a representable subnormal.
-        // Syntax was already checked; preserve that value, while rejecting underflow to zero.
-        if (!input && (input.bad() || std::fpclassify(value) != FP_SUBNORMAL))
-            return fail(ErrorCode::OutOfRange, "Price overflow or underflow");
+    const auto shift = static_cast<std::int64_t>(Price::decimal_places) + exponent -
+                       static_cast<std::int64_t>(fractional_digits) + static_cast<std::int64_t>(trailing_zeros);
+    if (shift < 0)
+        return fail(ErrorCode::OutOfRange, "Price cannot be represented exactly with eight decimal places");
+    if (shift > std::numeric_limits<std::int64_t>::digits10)
+        return fail(ErrorCode::OutOfRange, "Price exceeds its fixed-point range");
+
+    constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
+    std::int64_t ticks{};
+    for (const char character : significand) {
+        if (character == '.')
+            continue;
+        const auto digit = static_cast<std::int64_t>(character - '0');
+        if (ticks > (maximum - digit) / decimal_base)
+            return fail(ErrorCode::OutOfRange, "Price exceeds its fixed-point range");
+        ticks = ticks * decimal_base + digit;
     }
-    return value;
+    for (std::int64_t index = 0; index < shift; ++index) {
+        if (ticks > maximum / decimal_base)
+            return fail(ErrorCode::OutOfRange, "Price exceeds its fixed-point range");
+        ticks *= decimal_base;
+    }
+    return Price{ticks};
 }
 
 } // namespace
 
 Result<Price> parse_price(std::string_view text) {
-    // Validate syntax before the locale-independent library conversion; this avoids
-    // exceptions, whitespace acceptance, and NaN/Inf entering ordered containers.
+    // Validate syntax before converting directly to integer ticks.
     if (text.empty() || !is_decimal_digit(text.front())) {
         return fail(ErrorCode::InvalidInput, "Price must begin with a decimal digit");
     }
+    // Bound position arithmetic independently of the transport message-size limit.
+    if (!std::in_range<int>(text.size()))
+        return fail(ErrorCode::OutOfRange, "Price text exceeds the supported length");
     std::size_t position{};
+    std::size_t fractional_digits{};
     bool nonzero{};
     const auto consume_decimal_digits = [&text, &position, &nonzero] {
         const auto start = position;
@@ -76,27 +87,38 @@ Result<Price> parse_price(std::string_view text) {
     consume_decimal_digits();
     if (position < text.size() && text[position] == '.') {
         ++position;
+        const auto fraction_start = position;
         if (!consume_decimal_digits())
             return fail(ErrorCode::InvalidInput, "Missing fractional digits");
+        fractional_digits = position - fraction_start;
     }
     const bool nonzero_significand = nonzero;
+    const auto significand_end = position;
+    std::string_view exponent_text;
     if (position < text.size() && (text[position] == 'e' || text[position] == 'E')) {
         ++position;
+        const auto exponent_start = position;
         if (position < text.size() && (text[position] == '+' || text[position] == '-'))
             ++position;
         if (!consume_decimal_digits())
             return fail(ErrorCode::InvalidInput, "Missing exponent digits");
+        exponent_text = text.substr(exponent_start, position - exponent_start);
     }
     if (position != text.size())
         return fail(ErrorCode::InvalidInput, "Invalid price syntax");
 
-    const auto price = convert_decimal_price<Price>(text);
-    if (!price)
-        return std::unexpected(price.error());
-    if (!std::isfinite(*price) || (*price == 0 && nonzero_significand)) {
-        return fail(ErrorCode::OutOfRange, "Price overflow or underflow");
+    if (!nonzero_significand)
+        return Price{};
+    int exponent{};
+    if (!exponent_text.empty()) {
+        if (exponent_text.front() == '+')
+            exponent_text.remove_prefix(1);
+        const auto [end, error] =
+            std::from_chars(exponent_text.data(), exponent_text.data() + exponent_text.size(), exponent);
+        if (error != std::errc{} || end != exponent_text.data() + exponent_text.size())
+            return fail(ErrorCode::OutOfRange, "Price exponent exceeds the supported range");
     }
-    return price;
+    return convert_decimal_price(text.substr(0, significand_end), fractional_digits, exponent);
 }
 
 Result<Timestamp> parse_utc_timestamp(std::string_view text) {

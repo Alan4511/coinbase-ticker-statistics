@@ -19,7 +19,8 @@ constexpr std::string_view header = "time,symbol,trade_id,trade_price,count,mean
 constexpr std::string_view row = "1970-01-01T00:00:00.000000000Z,BTC-USD,42,1.25,1,1.25,1.25,1.25,1.25\n";
 
 StatisticsUpdate sample_update() {
-    return {{Timestamp{}, "BTC-USD", 42, 1.25L}, {1, 1.25L, 1.25L, 1.25L, 1.25L}};
+    const Price value{125'000'000};
+    return {{Timestamp{}, "BTC-USD", 42, value}, {1, {125'000'000, 1}, {125'000'000, 1}, value, value}};
 }
 
 TEST(CsvSink, FlushesByThresholdOrDeadline) {

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <result.hpp>
+#include <common/result.hpp>
 
 #include "statistics/window_options.hpp"
-#include <types.hpp>
+#include <common/types.hpp>
 
 #include <chrono>
 #include <deque>
@@ -14,7 +14,7 @@
 namespace coinbase_ticker_statistics {
 
 /**
- * Floating-point statistics for a single symbol, owned by the calling thread.
+ * Exact fixed-point statistics for a single symbol, owned by the calling thread.
  *
  * Insertion/expiration costs O(log N) per sample; queries cost O(1).
  * Two ordered partitions use O(N) memory without accumulating stale heap entries.
@@ -59,23 +59,14 @@ class SlidingWindow {
     std::unordered_map<TradeId, Timestamp> retained_trade_times_;
     std::multiset<Price> lower_prices_;
     std::multiset<Price> upper_prices_;
-    /** Neumaier compensation limits cancellation when expired prices are subtracted. */
-    struct CompensatedSum {
-        Statistic value{};
-        Statistic correction{};
-        void add(Statistic amount);
-        [[nodiscard]] Statistic total() const {
-            return value + correction;
-        }
-    };
     struct PendingUpdate {
         SampleCount expired_sample_count;
-        CompensatedSum sum_after_update;
+        PriceSum sum_after_update;
     };
     [[nodiscard]] Result<PendingUpdate> prepare_update(const TickerUpdate &ticker_update) const;
     void insert_update(const TickerUpdate &ticker_update);
 
-    CompensatedSum sum_;
+    PriceSum sum_{};
 };
 
 } // namespace coinbase_ticker_statistics

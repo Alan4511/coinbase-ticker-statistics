@@ -1,6 +1,6 @@
 #pragma once
 
-#include <result.hpp>
+#include <common/result.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -19,7 +19,7 @@ struct FeedConfig {
 };
 
 /** Validate feed-owned policy for both JSON loading and direct construction. */
-[[nodiscard]] inline Result<void> validate_feed_config(const FeedConfig &config) {
+[[nodiscard]] inline Result<void> validate(const FeedConfig &config) {
     if (config.host.empty() || config.port.empty())
         return fail(ErrorCode::InvalidConfiguration, "feed host and port must be nonempty");
     if (config.target.empty() || config.target.front() != '/')

@@ -1,29 +1,26 @@
 #pragma once
 
-#include <feed/transport/feed_config.hpp>
-#include <output/csv_config.hpp>
-#include <result.hpp>
-#include <statistics/window_options.hpp>
-#include <types.hpp>
+#include "json_meta.hpp"
+#include "settings.hpp"
+#include <common/result.hpp>
 
 #include <filesystem>
 #include <string_view>
+#include <utility>
 
 namespace coinbase_ticker_statistics {
-
-/** Application settings. Parsing/loading validates them; direct edits require validation again. */
-struct Config {
-    Symbols symbols;
-    FeedConfig feed;
-    WindowOptions window;
-    CsvConfig output;
-};
 
 /** Coordinate module policies and application constraints without starting I/O. */
 [[nodiscard]] Result<void> validate_config(const Config &config);
 
-/** Parse and validate all settings without coercion; success satisfies run_application's precondition. */
-[[nodiscard]] Result<Config> parse_config(std::string_view text);
+/** Parse and validate settings; the local object is returned only after all checks succeed. */
+[[nodiscard]] inline Result<Config> parse_config(std::string_view input) {
+    return json_utils::read_json<Config>(input, ErrorCode::InvalidConfiguration).and_then([](Config config) {
+        return validate_config(config).transform([&] {
+            return std::move(config);
+        });
+    });
+}
 
 /** Load validated JSON and resolve output paths; success satisfies run_application's precondition. */
 [[nodiscard]] Result<Config> load_config(const std::filesystem::path &path);

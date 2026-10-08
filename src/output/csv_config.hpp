@@ -1,6 +1,6 @@
 #pragma once
 
-#include <result.hpp>
+#include <common/result.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -11,6 +11,8 @@ namespace coinbase_ticker_statistics {
 
 /** Destination and continuous-output flushing policy for the CSV sink. */
 struct CsvConfig {
+    CsvConfig() = default;
+
     explicit CsvConfig(std::filesystem::path output_path) : path(std::move(output_path)) {
     }
 
@@ -19,7 +21,7 @@ struct CsvConfig {
     std::chrono::milliseconds flush_interval{250};
 };
 
-[[nodiscard]] inline Result<void> validate_csv_config(const CsvConfig &config) {
+[[nodiscard]] inline Result<void> validate(const CsvConfig &config) {
     if (config.path.empty())
         return fail(ErrorCode::InvalidConfiguration, "output path must not be empty");
     if (config.flush_every_rows == 0)

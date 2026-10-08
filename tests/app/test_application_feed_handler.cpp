@@ -43,8 +43,8 @@ static_assert(OutputSink<CountingSink>);
 static_assert(FeedHandler<ApplicationFeedHandler<RecordingSink, TestLifecycle>>);
 static_assert(FeedHandler<ApplicationFeedHandler<CountingSink, TestLifecycle>>);
 
-TickerUpdate update(TradeId id, Price price, Symbol symbol = "BTC-USD", Timestamp time = Timestamp{}) {
-    return {time, std::move(symbol), id, price};
+TickerUpdate update(TradeId id, std::int64_t units, Symbol symbol = "BTC-USD", Timestamp time = Timestamp{}) {
+    return {time, std::move(symbol), id, Price{units * Price::ticks_per_unit}};
 }
 
 TEST(ApplicationFeedHandler, RoutesStatisticsToAnyOutputSink) {
@@ -67,9 +67,11 @@ TEST(ApplicationFeedHandler, RoutesStatisticsToAnyOutputSink) {
     route_updates(recorded);
     ASSERT_EQ(recorded.updates.size(), 3U);
     EXPECT_EQ(recorded.updates[1].statistics.count, 2U);
-    EXPECT_EQ(recorded.updates[1].statistics.mean, 15);
+    EXPECT_EQ(recorded.updates[1].statistics.mean.numerator,
+              PriceSum{15 * Price::ticks_per_unit} * recorded.updates[1].statistics.mean.denominator);
     EXPECT_EQ(recorded.updates[2].statistics.count, 1U);
-    EXPECT_EQ(recorded.updates[2].statistics.mean, 100);
+    EXPECT_EQ(recorded.updates[2].statistics.mean.numerator,
+              PriceSum{100 * Price::ticks_per_unit} * recorded.updates[2].statistics.mean.denominator);
     CountingSink counted;
     route_updates(counted);
     EXPECT_EQ(counted.count, 3U);

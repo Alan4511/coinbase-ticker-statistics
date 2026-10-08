@@ -14,7 +14,7 @@ const CsvConfig &CsvSink::config() const noexcept {
 }
 
 Result<void> CsvSink::open() {
-    if (auto valid = validate_csv_config(config_); !valid)
+    if (auto valid = validate(config_); !valid)
         return valid;
     if (stream_.is_open())
         return fail(ErrorCode::InvalidState, "CSV output is already open");

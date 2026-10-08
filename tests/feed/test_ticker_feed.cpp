@@ -89,7 +89,7 @@ TEST(TickerFeed, DecodesFiltersAndCountsTypedUpdates) {
                         std::chrono::minutes{4} + std::chrono::seconds{5}});
     EXPECT_EQ(symbol, "BTC-USD");
     EXPECT_EQ(trade_id, 42U);
-    EXPECT_EQ(price, 123.45L);
+    EXPECT_EQ(price, Price{12'345'000'000});
     EXPECT_EQ(client.feed->counts().received_messages, 2U);
     EXPECT_EQ(client.feed->counts().ticker_updates, 1U);
     EXPECT_TRUE(exchange.completed_successfully());

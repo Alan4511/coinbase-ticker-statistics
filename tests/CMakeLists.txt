@@ -17,6 +17,7 @@ add_subdirectory(feed)
 add_subdirectory(output)
 add_subdirectory(config)
 add_subdirectory(app)
+add_subdirectory(runtime)
 
 target_include_directories(coinbase_ticker_statistics_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -25,7 +26,6 @@ target_include_directories(coinbase_ticker_statistics_tests PRIVATE
 target_link_libraries(coinbase_ticker_statistics_tests PRIVATE
     coinbase_ticker_statistics_application
     GTest::gtest_main
-    nlohmann_json::nlohmann_json
     OpenSSL::SSL
     Threads::Threads
 )

@@ -4,8 +4,8 @@
 #include "feed/subscription.hpp"
 #include "feed/transport/feed_connection.hpp"
 #include "feed/feed_handler.hpp"
-#include <result.hpp>
-#include <types.hpp>
+#include <common/result.hpp>
+#include <common/types.hpp>
 
 #include <boost/asio/io_context.hpp>
 

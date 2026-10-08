@@ -7,7 +7,8 @@ add_library(coinbase_ticker_statistics_feed
 
 target_link_libraries(coinbase_ticker_statistics_feed PUBLIC
     Boost::headers
-    PRIVATE nlohmann_json::nlohmann_json OpenSSL::SSL OpenSSL::Crypto Threads::Threads
+    glaze::glaze
+    PRIVATE OpenSSL::SSL OpenSSL::Crypto Threads::Threads
 )
 
 target_include_directories(coinbase_ticker_statistics_feed PUBLIC

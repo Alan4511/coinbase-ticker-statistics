@@ -1,93 +1,27 @@
 #include "feed/parser/ticker_parser.hpp"
-#include "feed/parser/parse_fields.hpp"
-
-#include <nlohmann/json.hpp>
-
-#include <cstdint>
+#include "feed/json_meta.hpp"
 
 namespace coinbase_ticker_statistics {
-namespace {
-
-using Json = nlohmann::json;
-
-namespace protocol {
-constexpr auto type = "type";
-constexpr auto ticker = "ticker";
-constexpr auto error = "error";
-constexpr auto message = "message";
-constexpr auto time = "time";
-constexpr auto product_id = "product_id";
-constexpr auto trade_id = "trade_id";
-constexpr auto price = "price";
-} // namespace protocol
-
-Result<std::string_view> read_string_field(const Json &document, const char *name) {
-    const auto field = document.find(name);
-    if (field == document.end() || !field->is_string() || field->get_ref<const std::string &>().empty()) {
-        return fail(ErrorCode::InvalidInput, std::string("ticker field '") + name + "' must be a nonempty string");
-    }
-    return field->get_ref<const std::string &>();
-}
-
-Result<TradeId> read_trade_id(const Json &document) {
-    const auto field = document.find(protocol::trade_id);
-    if (field == document.end()) {
-        return fail(ErrorCode::InvalidInput, "ticker is missing trade_id");
-    }
-    if (field->is_number_unsigned()) {
-        return field->get<TradeId>();
-    }
-    if (field->is_number_integer()) {
-        const auto signed_id = field->get<std::int64_t>();
-        if (signed_id >= 0) {
-            return static_cast<TradeId>(signed_id);
-        }
-    }
-    return fail(ErrorCode::InvalidInput, "ticker trade_id must be a nonnegative 64-bit integer");
-}
-
-} // namespace
 
 Result<std::optional<TickerUpdate>> parse_ticker_message(std::string_view message) {
-    // Malformed network data returns a validation error rather than throwing from JSON parsing.
-    const auto document = Json::parse(message, nullptr, false);
-    if (document.is_discarded()) {
-        return fail(ErrorCode::InvalidInput, "invalid feed JSON");
+    using namespace feed_json;
+    auto header = json_utils::read_json<MessageHeader>(message);
+    if (!header)
+        return std::unexpected(std::move(header.error()));
+    if (header->type.empty())
+        return fail(ErrorCode::InvalidInput, "type: expected a nonempty string");
+    if (header->type == key::error) {
+        auto description = json_utils::read_json<std::string>(header->message.str);
+        return fail(ErrorCode::Protocol, "Coinbase feed error: " + description.value_or("unspecified exchange error"));
     }
-    if (!document.is_object()) {
-        return fail(ErrorCode::InvalidInput, "feed message must be a JSON object");
-    }
-    const auto message_type = read_string_field(document, protocol::type);
-    if (!message_type) {
-        return std::unexpected(message_type.error());
-    }
-    if (*message_type == protocol::error) {
-        const auto description = document.find(protocol::message);
-        const std::string details = description != document.end() && description->is_string()
-                                        ? description->get<std::string>()
-                                        : "unspecified exchange error";
-        return fail(ErrorCode::Protocol, "Coinbase feed error: " + details);
-    }
-    if (*message_type != protocol::ticker) {
+    if (header->type != key::ticker)
         return std::nullopt;
-    }
-    const auto symbol = read_string_field(document, protocol::product_id);
-    if (!symbol) {
-        return std::unexpected(symbol.error());
-    }
-    const auto exchange_time = read_string_field(document, protocol::time).and_then(parse_utc_timestamp);
-    if (!exchange_time) {
-        return std::unexpected(exchange_time.error());
-    }
-    const auto price = read_string_field(document, protocol::price).and_then(parse_price);
-    if (!price) {
-        return std::unexpected(price.error());
-    }
-    const auto trade_id = read_trade_id(document);
-    if (!trade_id) {
-        return std::unexpected(trade_id.error());
-    }
-    return TickerUpdate{*exchange_time, std::string(*symbol), *trade_id, *price};
+    return json_utils::read_json<TickerUpdate>(message).and_then(
+        [](TickerUpdate update) -> Result<std::optional<TickerUpdate>> {
+            if (update.symbol.empty())
+                return fail(ErrorCode::InvalidInput, "product_id: expected a nonempty string");
+            return std::optional<TickerUpdate>{std::move(update)};
+        });
 }
 
 } // namespace coinbase_ticker_statistics
