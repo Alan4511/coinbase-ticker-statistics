@@ -31,7 +31,11 @@ class FeedConnection::Session {
         tls_.set_default_verify_paths();
         socket_.next_layer().set_verify_mode(ssl::verify_peer);
         socket_.next_layer().set_verify_callback(ssl::host_name_verification(config_.host));
-        if (SSL_set_tlsext_host_name(socket_.next_layer().native_handle(), config_.host.c_str()) != 1)
+        // Same OpenSSL control call as SSL_set_tlsext_host_name, without its C-style pointer cast.
+        if (SSL_ctrl(socket_.next_layer().native_handle(),
+                     SSL_CTRL_SET_TLSEXT_HOSTNAME,
+                     TLSEXT_NAMETYPE_host_name,
+                     config_.host.data()) != 1)
             return fail(ErrorCode::Transport, "cannot configure TLS server name");
         if (SSL_set_min_proto_version(socket_.next_layer().native_handle(), TLS1_2_VERSION) != 1)
             return fail(ErrorCode::Transport, "cannot configure minimum TLS version");

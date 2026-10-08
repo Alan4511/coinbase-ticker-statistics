@@ -24,6 +24,9 @@ function(coinbase_ticker_statistics_enable_warnings target)
             -Werror
         >
         $<$<CXX_COMPILER_ID:GNU>:
+            # Optimized Boost headers trigger this diagnostic even as system includes.
+            # Retain the warning without promoting it to an error; other warnings remain fatal.
+            -Wno-error=null-dereference
             -Wlogical-op
             -Wduplicated-cond
             -Wduplicated-branches

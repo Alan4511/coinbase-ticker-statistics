@@ -232,6 +232,10 @@ AddressSanitizer: CHECK failed: sanitizer_malloc_mac.inc:189 "((!asan_init_is_ru
 No ASan application pass is claimed.
 
 Linux verification
-No Linux runtime, Docker or Podman is available on this development host.
-.github/workflows/ci.yml configures GCC/Clang Release and Clang ASan/UBSan jobs.
-The GitHub Actions workflow has not run yet; Linux and ASan results remain pending.
+GitHub Actions run: https://github.com/Alan4511/coinbase-ticker-statistics/actions/runs/37761507988
+Commit: fef50bf06dbe5655a5a56f2eb9e31e47c8ec08ff; Debian trixie, 2026-10-08.
+Clang Release: 49/49 tests passed; 7 CSV fixture rows independently verified.
+GCC Release: compilation failed on Glaze name shadowing, an OpenSSL macro cast,
+and null-dereference diagnostics in optimized Boost headers.
+Clang ASan/UBSan: linking failed because compiler-rt sanitizer libraries were absent.
+The CI fixes require a new Linux run; no Linux sanitizer pass is claimed.

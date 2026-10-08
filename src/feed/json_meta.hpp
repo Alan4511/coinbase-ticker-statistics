@@ -83,12 +83,12 @@ template <>
 struct from<JSON, coinbase_ticker_statistics::Price> {
     template <auto Options>
     static void op(auto &price, is_context auto &&context, auto &&current, auto end) {
-        std::string text;
-        parse<JSON>::op<Options>(text, context, current, end);
+        std::string price_text;
+        parse<JSON>::op<Options>(price_text, context, current, end);
         if (parse_failed(context.error))
             return;
         coinbase_ticker_statistics::json_utils::assign_parsed(price,
-                                                              coinbase_ticker_statistics::parse_price(text),
+                                                              coinbase_ticker_statistics::parse_price(price_text),
                                                               context);
     }
 };
@@ -99,13 +99,14 @@ template <>
 struct from<JSON, coinbase_ticker_statistics::Timestamp> {
     template <auto Options>
     static void op(auto &timestamp, is_context auto &&context, auto &&current, auto end) {
-        std::string text;
-        parse<JSON>::op<Options>(text, context, current, end);
+        std::string timestamp_text;
+        parse<JSON>::op<Options>(timestamp_text, context, current, end);
         if (parse_failed(context.error))
             return;
-        coinbase_ticker_statistics::json_utils::assign_parsed(timestamp,
-                                                              coinbase_ticker_statistics::parse_utc_timestamp(text),
-                                                              context);
+        coinbase_ticker_statistics::json_utils::assign_parsed(
+            timestamp,
+            coinbase_ticker_statistics::parse_utc_timestamp(timestamp_text),
+            context);
     }
 };
 
