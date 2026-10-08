@@ -1,8 +1,8 @@
 #include "feed/parser/parse_fields.hpp"
+#include <common/format_timestamp.hpp>
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-#include <algorithm>
 #include <charconv>
 #include <limits>
 #include <stdexcept>
@@ -11,6 +11,17 @@
 
 namespace coinbase_ticker_statistics {
 namespace {
+
+// Different fractional widths represent the same timestamp; compare without zero padding.
+std::string_view trim_fractional_zeros(std::string_view text) {
+    if (text.find('.') != std::string_view::npos) {
+        while (text.ends_with('0'))
+            text.remove_suffix(1);
+        if (text.ends_with('.'))
+            text.remove_suffix(1);
+    }
+    return text;
+}
 
 Result<std::uint64_t> parse_price_digits(std::string_view digits) {
     if (digits.empty())
@@ -61,41 +72,34 @@ Result<Price> parse_price(std::string_view text) {
 }
 
 Result<Timestamp> parse_utc_timestamp(std::string_view text) {
-    constexpr std::string_view layout = "0000-00-00T00:00:00";
-    constexpr std::size_t fractional_precision = 9;
-    if (text.size() < layout.size() + 1 || text.size() > layout.size() + fractional_precision + 2 ||
-        !text.ends_with('Z'))
+    // The build shares one nanosecond configuration; the API still returns a standard chrono type.
+    constexpr auto fractional_precision = boost::posix_time::time_duration::num_fractional_digits();
+    static_assert(fractional_precision == 9,
+                  "Boost.DateTime requires nanoseconds; reconfigure CMake and refresh the IDE compilation database");
+    if (!text.ends_with('Z'))
         return fail(ErrorCode::InvalidInput, "Expected a UTC timestamp ending in Z");
-
-    const auto is_decimal_digit = [](char character) {
-        return character >= '0' && character <= '9';
-    };
-    for (std::size_t position = 0; position < layout.size(); ++position) {
-        if (layout[position] == '0' ? !is_decimal_digit(text[position]) : text[position] != layout[position])
-            return fail(ErrorCode::InvalidInput, "Expected YYYY-MM-DDTHH:MM:SS[.fraction]Z");
-    }
-    const auto year = text.substr(0, 4);
-    const auto hour = text.substr(11, 2);
-    const auto minute = text.substr(14, 2);
-    const auto second = text.substr(17, 2);
-    if (year < "1970" || year > "2200" || hour > "23" || minute > "59" || second > "59")
-        return fail(ErrorCode::InvalidInput, "Timestamp component is out of range");
-
-    const auto body = text.substr(0, text.size() - 1); // Boost's ISO parser expects no UTC suffix.
-    const auto fraction = body.substr(layout.size());
-    if (!fraction.empty()) {
-        if (!fraction.starts_with('.') || fraction.size() < 2)
+    text.remove_suffix(1); // Boost's ISO parser expects no UTC suffix.
+    if (const auto decimal_point = text.find('.'); decimal_point != std::string_view::npos) {
+        const auto fraction = text.substr(decimal_point + 1);
+        if (fraction.empty() || fraction.size() > fractional_precision)
             return fail(ErrorCode::InvalidInput, "Timestamp fraction must contain one to nine decimal digits");
-        if (!std::ranges::all_of(fraction.substr(1), is_decimal_digit))
-            return fail(ErrorCode::InvalidInput, "Expected a decimal digit in timestamp fraction");
     }
-    // Boost otherwise normalizes invalid clock fields and truncates excess fractional digits.
-    // Nanosecond configuration is private to this file; no Boost date/time type crosses the API.
-    static_assert(boost::posix_time::time_duration::num_fractional_digits() == fractional_precision);
     try {
-        const auto parsed = boost::posix_time::from_iso_extended_string(std::string(body));
+        const auto parsed = boost::posix_time::from_iso_extended_string(std::string(text));
+        // Check before converting: Boost supports dates outside our nanosecond timestamp range.
+        if (parsed.is_special() || parsed.date().year() < 1970 || parsed.date().year() > 2200)
+            return fail(ErrorCode::InvalidInput, "Timestamp component is out of range");
         const boost::posix_time::ptime epoch{boost::gregorian::date{1970, 1, 1}};
-        return Timestamp{std::chrono::nanoseconds{(parsed - epoch).total_nanoseconds()}};
+        const Timestamp timestamp{std::chrono::nanoseconds{(parsed - epoch).total_nanoseconds()}};
+        auto canonical = format_utc_timestamp(timestamp);
+        if (!canonical.has_value())
+            return std::unexpected(std::move(canonical.error()));
+        auto canonical_body = std::string_view{canonical.value()};
+        canonical_body.remove_suffix(1);
+        // Reject Boost's normalization/permissive syntax without duplicating ISO field positions.
+        if (trim_fractional_zeros(text) != trim_fractional_zeros(canonical_body))
+            return fail(ErrorCode::InvalidInput, "Expected YYYY-MM-DDTHH:MM:SS[.fraction]Z");
+        return timestamp;
     } catch (const boost::bad_lexical_cast &error) {
         return fail(ErrorCode::InvalidInput, "Invalid timestamp: " + std::string(error.what()));
     } catch (const std::out_of_range &error) {

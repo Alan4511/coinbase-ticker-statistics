@@ -37,7 +37,13 @@ class FeedConnection::Session {
             return fail(ErrorCode::Transport, "cannot configure minimum TLS version");
         socket_.read_message_max(config_.max_message_bytes);
         socket_.text(true);
-        // Our timer spans DNS through subscription and also bounds shutdown.
+        socket_.control_callback([this](websocket::frame_type frame, beast::string_view) {
+            // async_read includes peer-initiated close and TLS teardown. Bound that
+            // path too, even when the peer sends close but withholds close_notify.
+            if (frame == websocket::frame_type::close && state_ == State::Reading)
+                arm_deadline(config_.close_timeout, "WebSocket close deadline exceeded");
+        });
+        // Our timer spans DNS through subscription and both directions of shutdown.
         // Idle-feed monitoring and automatic pings remain outside scope.
         return {};
     }
@@ -137,7 +143,7 @@ class FeedConnection::Session {
             if (state_ != State::Reading)
                 return;
             if (error == websocket::error::closed) {
-                complete({});
+                complete(peer_close_result());
                 return;
             }
             if (!check_io_result(error, "WebSocket read"))
@@ -180,12 +186,22 @@ class FeedConnection::Session {
                 if (error && error != websocket::error::closed)
                     complete(fail(ErrorCode::Transport, "WebSocket close: " + error.message()));
                 else
-                    complete({});
+                    complete(peer_close_result());
             };
             socket_.async_close(websocket::close_code::normal, on_closed);
         } catch (const boost::system::system_error &error) {
             complete(fail(ErrorCode::Transport, "WebSocket close: " + std::string(error.what())));
         }
+    }
+
+    Result<void> peer_close_result() const {
+        const auto &reason = socket_.reason();
+        if (reason.code == websocket::close_code::none || reason.code == websocket::close_code::normal ||
+            reason.code == websocket::close_code::going_away)
+            return {};
+        return fail(ErrorCode::Protocol,
+                    "WebSocket peer close: code=" + std::to_string(reason.code) +
+                        " reason=" + std::string(reason.reason));
     }
 
     void complete(Result<void> result) {

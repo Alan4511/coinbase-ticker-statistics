@@ -124,6 +124,9 @@ TEST(TickerParser, SurfacesExchangeErrors) {
     EXPECT_NE(error.error().message.find("Invalid product"), std::string::npos);
     ASSERT_RESULT_ERROR(parse_ticker_message(R"({"type":"error"})"), ErrorCode::Protocol);
     ASSERT_RESULT_ERROR(parse_ticker_message(R"({"type":"error","message":42})"), ErrorCode::Protocol);
+    const auto empty = parse_ticker_message(R"({"type":"error","message":""})");
+    ASSERT_RESULT_ERROR(empty, ErrorCode::Protocol);
+    EXPECT_TRUE(empty.error().message.contains("unspecified exchange error"));
 }
 
 } // namespace

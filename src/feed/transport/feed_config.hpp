@@ -24,6 +24,8 @@ struct FeedConfig {
         return fail(ErrorCode::InvalidConfiguration, "feed host and port must be nonempty");
     if (config.target.empty() || config.target.front() != '/')
         return fail(ErrorCode::InvalidConfiguration, "feed target must start with /");
+    if (config.host.contains('\0') || config.port.contains('\0') || config.target.contains('\0'))
+        return fail(ErrorCode::InvalidConfiguration, "feed endpoint must not contain a NUL character");
     if (config.max_message_bytes == 0)
         return fail(ErrorCode::InvalidConfiguration, "feed message size must be positive");
     constexpr auto maximum_timeout = std::chrono::days{365};

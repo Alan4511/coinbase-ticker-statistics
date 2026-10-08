@@ -3,6 +3,7 @@
 #include <feed/parser/parse_fields.hpp>
 #include <output/format_fields.hpp>
 
+#include <boost/date_time/posix_time/posix_time.hpp>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -99,7 +100,13 @@ TEST(Price, ParsesAndRoundTripsExactDecimalTicks) {
 }
 
 TEST(Timestamp, ParsesFormatsAndValidatesUtc) {
+    // Exercise DateTime in the caller too: inconsistent build modes can select
+    // incompatible inline constructors at link time, despite isolated tests passing.
+    const boost::posix_time::time_duration second{0, 0, 1};
+    ASSERT_EQ(second.ticks(), 1'000'000'000);
     EXPECT_EQ(parse_utc_timestamp("1970-01-01T00:00:00Z"), Timestamp{});
+    EXPECT_EQ(parse_utc_timestamp("1970-01-01T00:00:00.0Z"), Timestamp{});
+    EXPECT_EQ(parse_utc_timestamp("1970-01-01T00:00:00.000000000Z"), Timestamp{});
     EXPECT_EQ(parse_utc_timestamp("1970-01-01T00:00:01.000000001Z"),
               Timestamp{std::chrono::nanoseconds{1'000'000'001}});
     ASSERT_RESULT_VALUE(leap_day, parse_utc_timestamp("2024-02-29T23:59:59.123Z"));
@@ -139,7 +146,12 @@ TEST(Timestamp, ParsesFormatsAndValidatesUtc) {
                                  "2024-01-01T24:00:00Z",
                                  "2024-01-01T00:60:00Z",
                                  "2024-01-01T00:00:60Z",
+                                 "2024-1-1T00:00:00Z",
+                                 "2024-01-01T0:00:00Z",
+                                 "2024-01-01T00:00Z",
+                                 "2024-01-01T00:00:00:00Z",
                                  "2024-01-01T00:00:00.Z",
+                                 "2024-01-01T00:00:00.0000000000Z",
                                  "2024-01-01T00:00:00.1234567890Z",
                                  "2024-01-01T00:00:00+00:00",
                                  "2024-01-01 00:00:00Z",

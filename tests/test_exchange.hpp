@@ -60,6 +60,8 @@ enum class ExchangeReply {
     Binary,
     RemainIdle,
     WaitForClientClose,
+    ErrorClose,
+    CloseWithoutTlsShutdown,
     StallTls
 };
 
@@ -125,6 +127,17 @@ class LoopbackExchange {
                 buffer.consume(buffer.size());
                 socket.read(buffer, error);
                 ::_exit(error == beast::websocket::error::closed ? 0 : 3);
+            }
+            if (reply == ExchangeReply::CloseWithoutTlsShutdown) {
+                // Valid unmasked server close frame, code 1000, without TLS close_notify.
+                const unsigned char close_frame[]{0x88, 0x02, 0x03, 0xe8};
+                net::write(socket.next_layer(), net::buffer(close_frame));
+                for (;;)
+                    ::pause();
+            }
+            if (reply == ExchangeReply::ErrorClose) {
+                socket.close(beast::websocket::close_code::internal_error);
+                ::_exit(0);
             }
             socket.close(beast::websocket::close_code::normal);
             ::_exit(0);

@@ -132,6 +132,10 @@ TEST(Config, PreservesUnknownAndDuplicateKeyPolicies) {
     EXPECT_EQ(sections.window.duration, 300s);
     EXPECT_EQ(sections.output.path, "last.csv");
     EXPECT_EQ(sections.output.flush_every_rows, 100U);
+    ASSERT_RESULT_OK(parse_and_validate_config(R"({
+        "symbols":["BTC-USD"], "feed":{"host":""}, "feed":{"host":"localhost"},
+        "window":{"duration_seconds":0}, "window":{}, "output":{"path":"test.csv"}
+    })")); // Domain validation applies to the effective settings after replacement.
     ASSERT_RESULT_ERROR(parse_and_validate_config(R"({
         "symbols":["BTC-USD"], "feed":{"host":1}, "feed":{"host":"localhost"},
         "output":{"path":"test.csv"}
@@ -162,6 +166,9 @@ TEST(Config, RejectsInvalidConfiguration) {
         {"symbol syntax", R"({"symbols":["btc-usd"]})"},
         {"feed section", R"({"feed":null})"},
         {"empty host", R"({"feed":{"host":""}})"},
+        {"NUL host", R"({"feed":{"host":"localhost\u0000ignored"}})"},
+        {"NUL port", R"({"feed":{"port":"443\u0000ignored"}})"},
+        {"NUL target", R"({"feed":{"target":"/\u0000ignored"}})"},
         {"port type", R"({"feed":{"port":443}})"},
         {"target syntax", R"({"feed":{"target":"ticker"}})"},
         {"message limit zero", R"({"feed":{"max_message_bytes":0}})"},
@@ -185,6 +192,7 @@ TEST(Config, RejectsInvalidConfiguration) {
         {"window representation overflow", R"({"window":{"duration_seconds":9223372036854775808}})"},
         {"output section", R"({"output":[]})"},
         {"empty path", R"({"output":{"path":""}})"},
+        {"NUL path", R"({"output":{"path":"test.csv\u0000ignored"}})"},
         {"row threshold zero", R"({"output":{"flush_every_rows":0}})"},
         {"row threshold overflow", R"({"output":{"flush_every_rows":18446744073709551616}})"},
         {"flush interval zero", R"({"output":{"flush_interval_ms":0}})"},

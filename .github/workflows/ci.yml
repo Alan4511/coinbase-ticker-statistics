@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-tests:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: debian:trixie-slim
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC Release
+            id: gcc-release
+            compiler: g++
+            build_type: Release
+            sanitizers: "OFF"
+          - name: Clang Release
+            id: clang-release
+            compiler: clang++
+            build_type: Release
+            sanitizers: "OFF"
+          - name: Clang ASan/UBSan
+            id: clang-sanitized
+            compiler: clang++
+            build_type: Debug
+            sanitizers: "ON"
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      CXX: ${{ matrix.compiler }}
+      BUILD_TYPE: ${{ matrix.build_type }}
+      ENABLE_SANITIZERS: ${{ matrix.sanitizers }}
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends g++ clang cmake ninja-build git ca-certificates libssl-dev python3
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+          -DCMAKE_CXX_COMPILER="$CXX"
+          -DCOINBASE_TICKER_STATISTICS_SANITIZERS="$ENABLE_SANITIZERS"
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        run: >-
+          ctest --test-dir build --output-on-failure
+          --output-junit "$GITHUB_WORKSPACE/build/linux-tests.xml"
+          --output-log "$GITHUB_WORKSPACE/build/linux-tests.log"
+
+      - name: Verify CSV fixture
+        run: python3 tools/verify_csv.py --config data/fixture_config.json --require-expiration | tee build/csv-verification.log
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-${{ matrix.id }}
+          retention-days: 7
+          path: |
+            build/linux-tests.xml
+            build/linux-tests.log
+            build/csv-verification.log
+            build/Testing/Temporary/LastTest.log

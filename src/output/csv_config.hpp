@@ -24,6 +24,8 @@ struct CsvConfig {
 [[nodiscard]] inline Result<void> validate(const CsvConfig &config) {
     if (config.path.empty())
         return fail(ErrorCode::InvalidConfiguration, "output path must not be empty");
+    if (config.path.native().find(std::filesystem::path::value_type{}) != std::filesystem::path::string_type::npos)
+        return fail(ErrorCode::InvalidConfiguration, "output path must not contain a NUL character");
     if (config.flush_every_rows == 0)
         return fail(ErrorCode::InvalidConfiguration, "output.flush_every_rows must be positive");
     if (config.flush_interval <= std::chrono::milliseconds::zero() || config.flush_interval > std::chrono::days{365})

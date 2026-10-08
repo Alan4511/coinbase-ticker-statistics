@@ -1,13 +1,8 @@
 # Configuration
 
-Pass JSON with `--config PATH`. [example.json](../config/example.json) shows all
-current options. Root `symbols` and `output.path` are required. Other settings
-use the defaults below. Known fields have strict type/range validation; unknown
-keys are ignored and duplicate JSON keys use their last value.
-
-`parse_and_validate_config()` and `load_config()` return validated settings. `run_application()`
-requires that validated configuration; direct C++ construction or changes require
-`validate_config()` before running.
+- Pass JSON with `--config PATH`; see [example.json](../config/example.json).
+- Required: root `symbols` and `output.path`. Other settings use the defaults below.
+- `parse_and_validate_config()` / `load_config()` return validated settings. Direct C++ construction/edits require `validate_config()` before running.
 
 ## Minimal configuration
 
@@ -20,118 +15,80 @@ requires that validated configuration; direct C++ construction or changes requir
 
 ## Symbols
 
-`symbols` must be a nonempty array of distinct product IDs such as `BTC-USD`.
-All products use one public ticker WebSocket; each has an independent window.
-There is no implicit subscription, authentication setting or connection grouping.
-
-Older configurations must replace `connections` with the root `symbols` array.
+- Nonempty array of distinct product IDs; one public ticker connection, independent windows.
+- IDs allow uppercase ASCII letters, digits and separated hyphens; at least one hyphen, no leading/trailing or repeated hyphens.
+- No implicit subscription, authentication or connection grouping.
+- Older configurations: replace `connections` with root `symbols`.
 
 ## Feed
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `host` | `ws-feed.exchange.coinbase.com` | Host without scheme or port. |
-| `port` | `"443"` | Service/port string used by the resolver. |
+| `port` | `"443"` | Resolver service/port string. |
 | `target` | `"/"` | WebSocket HTTP target, beginning with /. |
-| `connect_timeout_seconds` | `15` | Integer in 1..31536000; deadline from DNS through subscription. |
+| `connect_timeout_seconds` | `15` | Integer in 1..31536000; DNS through subscription deadline. |
 | `close_timeout_seconds` | `5` | Integer in 1..31536000; maximum WebSocket close time. |
 | `max_message_bytes` | `1048576` | Positive integer maximum incoming message size. |
 
-TLS certificate and hostname verification are mandatory, using OpenSSL's default
-trust store. Deployment-specific trust configuration belongs to the environment.
-Host/port syntax is delegated to the networking library. DNS, connection setup
-and reads are asynchronous on one event-loop thread. Connection and close
-deadlines are enforced; there is no idle-feed timeout.
+- Mandatory certificate/hostname verification using OpenSSL's default trust store; trust changes belong in the environment.
+- Host/port syntax is delegated to networking libraries.
+- Endpoint fields must not contain NUL characters.
+- Asynchronous setup/reads on one event loop; setup/close deadlines, no idle timeout.
 
 ## Window
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `duration_seconds` | `300` | Integer in 1..31536000; use 3600 for one hour. |
-| `max_observations_per_symbol` | `100000` | Positive integer limit on retained observations in each symbol's window. |
+| `duration_seconds` | `300` | Integer in 1..31536000; 3600 for one hour. |
+| `max_observations_per_symbol` | `100000` | Positive integer retained-observation limit per symbol. |
 
-Window membership is `(t-duration,t]`, using each symbol's exchange time. Equal
-timestamps are valid; decreasing timestamps fail before duplicate checking.
-Retained duplicate trade IDs are ignored, considering prospective expiration;
-ignored duplicates do not mutate state, advance time or emit rows. IDs are
-forgotten after expiration. Idle windows expire on the next accepted event.
-
-All accepted samples remain until expiration. Capacity is checked after prospective
-expiration and duplicate filtering. If a new observation would exceed the limit,
-the run fails with `OutOfRange` before changing that window; no samples are dropped
-or approximated. The limit bounds retained observations, not total process memory
-or allocation latency. Raise it for longer or busier windows. Mean weights each
-ticker equally, not by volume or elapsed time. Prices use eight-decimal integer ticks in the
-range `0..92233720368.54775807`; finer nonzero decimal places are rejected.
-Mean and median are calculated exactly and rounded to eight decimal places only
-for CSV, using nearest, ties-to-even. Scale and rounding are fixed policies;
-see the [numeric tradeoff](DESIGN_DECISIONS.md#numeric-model).
+- Membership: `(t-duration,t]`, using exchange time. Equal timestamps allowed; decreasing timestamps fail before duplicate checking.
+- Retained duplicate IDs are ignored after considering prospective expiration; no state/time change or row. Expired IDs may be reused; idle windows expire on the next accepted event.
+- Capacity is checked after prospective expiration and duplicate filtering. Overflow returns `OutOfRange` before mutation; no samples are dropped/approximated.
+- Limit bounds samples, not process memory/allocation latency; raise it for longer/busier windows.
+- Mean weights ticker updates equally, not by volume/time.
+- Eight-decimal price ticks: `0..92233720368.54775807`; finer nonzero digits rejected.
+- Exact mean/median round only in CSV, nearest ties-to-even. Fixed scale/error bound: [numeric model](DESIGN_DECISIONS.md#numeric-model).
 
 ## Output
 
-`output.path` is a required nonempty path, absolute or relative to the configuration
-file's directory. Parent directories are created automatically. Every run replaces
-existing content; use separate paths to retain previous runs. Window validation
-and connection/subscription complete before the destination is opened.
-
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `flush_every_rows` | `100` | Positive integer; flush after this many rows across all symbols. Set `1` for immediate flushing. |
-| `flush_interval_ms` | `250` | Integer in 1..31536000000; flush a partial batch after this many milliseconds from its first row. |
+| `path` | Required | Nonempty path; relative to the configuration file's directory. |
+| `flush_every_rows` | `100` | Positive integer across all symbols; `1` flushes each row. |
+| `flush_interval_ms` | `250` | Integer in 1..31536000000; partial-batch deadline from its first row. |
 
-The header is flushed immediately. Rows flush when the count or interval is
-reached, whichever comes first; additional rows do not postpone the deadline.
-The timer runs even when the feed is idle, and shutdown flushes any remaining
-rows. The stream may publish data earlier when its internal buffer fills.
+- Parent directories are created; every run replaces existing content.
+- NUL paths are rejected. Output/input-file aliases are not checked; use a CSV destination distinct from the configuration file, including symlinks/hard links.
+- Validation and subscription writing precede opening; header flushes immediately.
+- Flush at count/interval, whichever comes first; later rows do not postpone the timer. Timer works while idle; shutdown flushes the remainder. Stream buffering may publish earlier.
+- Writes/flushes remain synchronous: slow I/O delays timers. Interval is a scheduling bound, not hard real-time; batching delays visibility/error detection.
+- Timer-flush failure stops the feed with failure exit status. Flush does not guarantee durability; abrupt termination can lose rows.
+- Alternative sinks implement `write_statistics()` and require application configuration/lifecycle wiring; no runtime registry/factory.
 
-Flushing still uses synchronous I/O on the event loop. Slow processing/writes can
-delay the timer, so its interval is a scheduling bound rather than a hard
-real-time guarantee. Batching reduces explicit flush frequency but delays
-visibility and potentially detection of output errors. A timed flush failure
-stops the feed and yields a failure exit status. Flush does not guarantee disk
-durability; abrupt termination can lose buffered rows.
+```csv
+time,symbol,trade_id,trade_price,count,mean,median,low,high
+```
 
-Production uses `ApplicationFeedHandler<CsvSink, Application>`. Another destination
-supplies `write_statistics()` and changes application construction/lifecycle wiring;
-statistics and the generic event handler stay unchanged. `OutputSink` does not
-provide a runtime sink registry or configurable sink factory.
+- UTC exchange timestamps: nine fractional digits.
+- Locale-independent decimals: up to eight fractional digits; insignificant zeros omitted.
+- Comma delimiter; quotes, commas and line endings escaped.
 
-Columns are `time,symbol,trade_id,trade_price,count,mean,median,low,high`.
-Time is UTC exchange time with nine fractional digits. Prices and statistics use
-ordinary decimal notation with up to eight fractional digits, independent of the
-stream locale. Insignificant trailing zeros are omitted.
-The delimiter is a comma; quotes, commas and line endings are escaped.
+## JSON policies
 
-Configuration parsing ignores unknown keys but validates their JSON syntax.
-Known fields must have the documented types. Native checked integer conversion
-accepts exact positive-exponent forms such as `3e2`; fractional values and overflow
-are rejected. Glaze's integer conversion does not accept decimal-point or negative-
-exponent spellings. Repeated valid keys use the last value, including
-complete replacement of repeated sections. An invalid earlier occurrence still
-fails. Files are read into memory and parsed through the same whole-document
-boundary as message buffers. Malformed or trailing content is rejected.
+- Unknown keys ignored but syntactically validated; known fields have strict types/ranges.
+- Malformed/trailing input rejected; nesting limited to 256 levels. Files and message buffers use the same whole-document boundary; config files have no byte-size limit and must fit in memory.
+- Native integers, including ticker `trade_id`, accept exact positive-exponent forms such as `3e2`; fractional values/overflow rejected. Decimal-point and negative-exponent spellings unsupported.
+- Repeated keys use the last value; sections replace rather than merge. Earlier syntax/type errors fail; domain validation checks the final settings.
 
-## Process lifetime and malformed messages
+## Lifetime and diagnostics
 
-Malformed data, Coinbase error messages and processing/output failures stop the
-run. Unrelated valid message types are ignored. A normal peer close ends the run
-successfully; unexpected transport failures return an error. There is no reconnect.
-
-Ctrl-C/SIGTERM stops processing and attempts a normal WebSocket close. If the peer
-responds, the application flushes CSV, logs the reason and final counts, and exits
-successfully. If closing fails or exceeds `close_timeout_seconds`, the transport
-is closed forcibly, CSV is still flushed and an error is reported with a failure
-exit status. During connection setup, the signal cancels pending operations
-without opening the output file. No unsubscribe is needed when closing a connection.
-
-Signals and deadlines run on the same event loop as processing, so synchronous
-CSV I/O can delay them; the deadlines are scheduling bounds, not hard real-time
-guarantees. SIGKILL and process crashes bypass cleanup. There is no configured
-run duration or event-count limit.
-
-Startup, shutdown and error messages share stderr. Redirect it with
-`2> application.log` to capture both INFO and ERROR records in one file. The final
-summary includes received-message, decoded-ticker and emitted-row counts; there
-are no periodic or per-ticker diagnostic messages. CSV output uses its own file.
-Emitted-row counts include successful writes into the buffer; they do not prove
-that every row reached the file when a later flush fails.
+- Malformed data, Coinbase errors and processing/output failures stop the run; unrelated valid messages are ignored. Peer close codes 1000, 1001 or no code succeed; other codes and unexpected transport failures return errors. No reconnect.
+- Ctrl-C/SIGTERM requests normal WebSocket close, flushes CSV and logs final counts. Successful close exits successfully; close failure/timeout forces transport closure and returns failure.
+- During setup, signals cancel pending operations without opening CSV. No unsubscribe required; synchronous work can delay signals/deadlines.
+- Peer-initiated close also uses the close deadline, including stalled TLS teardown.
+- SIGKILL/crashes bypass cleanup. No run-duration/event-count limit.
+- INFO and ERROR share stderr; capture with `2> application.log`. CSV uses its own file; log rotation/collection is external.
+- Final counts: received messages, decoded tickers, emitted rows. Emitted rows include buffered writes and do not prove persistence after a later flush failure.
+- No periodic/per-ticker diagnostic logging.

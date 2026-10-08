@@ -13,6 +13,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(CompilerWarnings)
 include(Dependencies)
 
+# DateTime is also included by Asio. Its type definitions must agree in every
+# translation unit; a parser-only definition changes layouts and violates the ODR.
+add_compile_definitions(BOOST_DATE_TIME_POSIX_TIME_STD_CONFIG)
+
 option(COINBASE_TICKER_STATISTICS_SANITIZERS "Enable address and undefined-behavior sanitizers" OFF)
 set(COINBASE_TICKER_STATISTICS_SANITIZER_SET "address,undefined" CACHE STRING "Comma-separated compiler sanitizers")
 if(COINBASE_TICKER_STATISTICS_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")

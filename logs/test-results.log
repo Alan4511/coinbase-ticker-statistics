@@ -1,221 +1,222 @@
 Coinbase Ticker Statistics — verification
-Report generated: 2026-10-08T13:11:11.065814+05:30 (Asia/Calcutta)
+Report generated: 2026-10-08T15:37:55+05:30 (Asia/Calcutta)
 Platform: macOS arm64; AppleClang 16.0.0; C++23
-Results: 48/48 tests passed in Release and Debug/UBSan.
-Changes: private config JSON implementation, configurable exact-window capacity,
-bulk expiration rebalancing, allocation diagnostics and secondary CSV cleanup reporting.
-Regression coverage: capacity before mutation, signals during TLS setup,
-processing failure followed by close timeout, and CSV cleanup failure preserving the first error.
-Public config header also compiles without a Glaze include path.
+Results: 49/49 tests passed in Release and Debug/UBSan.
+Regression coverage: consistent Boost timestamp precision, strict canonical UTC syntax,
+NUL path/endpoint rejection, peer error-close codes and bounded peer TLS shutdown.
 Workspace prefixes are omitted from captured output below.
 
 Release
 Command: ctest --test-dir build/submission-release --output-on-failure
 Test project build/submission-release
       Start  1: SlidingWindow.ValidatesDurationOnDirectConstruction
- 1/48 Test  #1: SlidingWindow.ValidatesDurationOnDirectConstruction .........................   Passed    0.01 sec
+ 1/49 Test  #1: SlidingWindow.ValidatesDurationOnDirectConstruction .........................   Passed    0.01 sec
       Start  2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary
- 2/48 Test  #2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary ..................   Passed    0.01 sec
+ 2/49 Test  #2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary ..................   Passed    0.01 sec
       Start  3: SlidingWindow.HandlesDuplicateTradeIds
- 3/48 Test  #3: SlidingWindow.HandlesDuplicateTradeIds ......................................   Passed    0.01 sec
+ 3/49 Test  #3: SlidingWindow.HandlesDuplicateTradeIds ......................................   Passed    0.01 sec
       Start  4: SlidingWindow.EnforcesCapacityAfterExpirationWithoutDroppingSamples
- 4/48 Test  #4: SlidingWindow.EnforcesCapacityAfterExpirationWithoutDroppingSamples .........   Passed    0.01 sec
+ 4/49 Test  #4: SlidingWindow.EnforcesCapacityAfterExpirationWithoutDroppingSamples .........   Passed    0.01 sec
       Start  5: SlidingWindow.RejectsInvalidOrOutOfOrderUpdatesWithoutMutation
- 5/48 Test  #5: SlidingWindow.RejectsInvalidOrOutOfOrderUpdatesWithoutMutation ..............   Passed    0.01 sec
+ 5/49 Test  #5: SlidingWindow.RejectsInvalidOrOutOfOrderUpdatesWithoutMutation ..............   Passed    0.01 sec
       Start  6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration
- 6/48 Test  #6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration .........   Passed    0.01 sec
+ 6/49 Test  #6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration .........   Passed    0.01 sec
       Start  7: SlidingWindow.RandomizedUpdatesMatchIndependentReference
- 7/48 Test  #7: SlidingWindow.RandomizedUpdatesMatchIndependentReference ....................   Passed    0.05 sec
+ 7/49 Test  #7: SlidingWindow.RandomizedUpdatesMatchIndependentReference ....................   Passed    0.04 sec
       Start  8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors
- 8/48 Test  #8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors ...   Passed    0.01 sec
+ 8/49 Test  #8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors ...   Passed    0.01 sec
       Start  9: TickerParser.DecodesTickerAndFiltersControlMessages
- 9/48 Test  #9: TickerParser.DecodesTickerAndFiltersControlMessages .........................   Passed    0.01 sec
+ 9/49 Test  #9: TickerParser.DecodesTickerAndFiltersControlMessages .........................   Passed    0.01 sec
       Start 10: TickerParser.RejectsMalformedTickerMessages
-10/48 Test #10: TickerParser.RejectsMalformedTickerMessages .................................   Passed    0.01 sec
+10/49 Test #10: TickerParser.RejectsMalformedTickerMessages .................................   Passed    0.01 sec
       Start 11: TickerParser.SurfacesExchangeErrors
-11/48 Test #11: TickerParser.SurfacesExchangeErrors .........................................   Passed    0.01 sec
+11/49 Test #11: TickerParser.SurfacesExchangeErrors .........................................   Passed    0.01 sec
       Start 12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls
-12/48 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.01 sec
+12/49 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.02 sec
       Start 13: FeedConnection.RejectsTransportOrProtocolViolations
-13/48 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.01 sec
+13/49 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.01 sec
       Start 14: FeedConnection.BoundsConnectionAndShutdown
-14/48 Test #14: FeedConnection.BoundsConnectionAndShutdown ..................................   Passed    2.02 sec
-      Start 15: TickerFeed.DecodesFiltersAndCountsTypedUpdates
-15/48 Test #15: TickerFeed.DecodesFiltersAndCountsTypedUpdates ..............................   Passed    0.03 sec
-      Start 16: TickerFeed.PropagatesParserAndConsumerFailures
-16/48 Test #16: TickerFeed.PropagatesParserAndConsumerFailures ..............................   Passed    0.02 sec
-      Start 17: Subscription.BuildsAndValidatesMultiSymbolSubscription
-17/48 Test #17: Subscription.BuildsAndValidatesMultiSymbolSubscription ......................   Passed    0.01 sec
-      Start 18: CsvWriter.WritesEscapedRoundTrippableRows
-18/48 Test #18: CsvWriter.WritesEscapedRoundTrippableRows ...................................   Passed    0.01 sec
-      Start 19: CsvWriter.ReportsStreamFailures
-19/48 Test #19: CsvWriter.ReportsStreamFailures .............................................   Passed    0.01 sec
-      Start 20: NumericFormatting.RoundsExactStatisticsToNearestEvenTick
-20/48 Test #20: NumericFormatting.RoundsExactStatisticsToNearestEvenTick ....................   Passed    0.01 sec
-      Start 21: CsvSink.FlushesByThresholdOrDeadline
-21/48 Test #21: CsvSink.FlushesByThresholdOrDeadline ........................................   Passed    0.26 sec
-      Start 22: CsvSink.CloseFlushesAndCancelsPendingWork
-22/48 Test #22: CsvSink.CloseFlushesAndCancelsPendingWork ...................................   Passed    0.01 sec
-      Start 23: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle
-23/48 Test #23: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle .....................   Passed    0.03 sec
-      Start 24: Config.ParsesRequiredDefaultsAndOverrides
-24/48 Test #24: Config.ParsesRequiredDefaultsAndOverrides ...................................   Passed    0.01 sec
-      Start 25: Config.PreservesUnknownAndDuplicateKeyPolicies
-25/48 Test #25: Config.PreservesUnknownAndDuplicateKeyPolicies ..............................   Passed    0.01 sec
-      Start 26: Config.RejectsInvalidConfiguration
-26/48 Test #26: Config.RejectsInvalidConfiguration ..........................................   Passed    0.01 sec
-      Start 27: Config.ValidatesUnusedFieldsAndEntireInput
-27/48 Test #27: Config.ValidatesUnusedFieldsAndEntireInput ..................................   Passed    0.01 sec
-      Start 28: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies
-28/48 Test #28: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies ..........   Passed    0.01 sec
-      Start 29: Config.ReportsFirstValidationFailure
-29/48 Test #29: Config.ReportsFirstValidationFailure ........................................   Passed    0.01 sec
-      Start 30: Config.LoadsFilesAndResolvesOutputPath
-30/48 Test #30: Config.LoadsFilesAndResolvesOutputPath ......................................   Passed    0.01 sec
-      Start 31: Pipeline.FixtureMatchesIndependentExpectedCsv
-31/48 Test #31: Pipeline.FixtureMatchesIndependentExpectedCsv ...............................   Passed    0.01 sec
-      Start 32: Logging.FormatsDiagnosticsAndContainsStreamFailures
-32/48 Test #32: Logging.FormatsDiagnosticsAndContainsStreamFailures .........................   Passed    0.01 sec
-      Start 33: Application.WritesCsvAndReportsFinalCounts
-33/48 Test #33: Application.WritesCsvAndReportsFinalCounts ..................................   Passed    0.01 sec
-      Start 34: Application.ConnectionFailurePreservesExistingOutput
-34/48 Test #34: Application.ConnectionFailurePreservesExistingOutput ........................   Passed    0.01 sec
-      Start 35: Application.ProcessingFailureStopsAndFlushesPreviousRows
-35/48 Test #35: Application.ProcessingFailureStopsAndFlushesPreviousRows ....................   Passed    0.01 sec
-      Start 36: Application.ProcessingFailureSurvivesCloseDeadline
-36/48 Test #36: Application.ProcessingFailureSurvivesCloseDeadline ..........................   Passed    1.01 sec
-      Start 37: Application.CapacityFailureStopsAndFlushesAcceptedRows
-37/48 Test #37: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.01 sec
-      Start 38: Application.SignalShutdownIsGraceful
-38/48 Test #38: Application.SignalShutdownIsGraceful ........................................   Passed    0.08 sec
-      Start 39: Application.TimedOutputFailureStopsIdleFeed
-39/48 Test #39: Application.TimedOutputFailureStopsIdleFeed .................................   Passed    0.04 sec
-      Start 40: Application.SignalDuringConnectionSetupPreservesExistingOutput
-40/48 Test #40: Application.SignalDuringConnectionSetupPreservesExistingOutput ..............   Passed    0.03 sec
-      Start 41: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure
-41/48 Test #41: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure .........   Passed    0.01 sec
-      Start 42: Application.CloseDeadlineBoundsUnresponsivePeer
-42/48 Test #42: Application.CloseDeadlineBoundsUnresponsivePeer .............................   Passed    1.04 sec
-      Start 43: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink
-43/48 Test #43: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink ......................   Passed    0.01 sec
-      Start 44: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures
-44/48 Test #44: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures ..................   Passed    0.01 sec
-      Start 45: Price.ParsesAndRoundTripsExactDecimalTicks
-45/48 Test #45: Price.ParsesAndRoundTripsExactDecimalTicks ..................................   Passed    0.01 sec
-      Start 46: Timestamp.ParsesFormatsAndValidatesUtc
-46/48 Test #46: Timestamp.ParsesFormatsAndValidatesUtc ......................................   Passed    0.01 sec
-      Start 47: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures
-47/48 Test #47: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures ...........   Passed    0.01 sec
-      Start 48: RunControl.StopAndCompletionAreIdempotent
-48/48 Test #48: RunControl.StopAndCompletionAreIdempotent ...................................   Passed    0.01 sec
+14/49 Test #14: FeedConnection.BoundsConnectionAndShutdown ..................................   Passed    2.02 sec
+      Start 15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown
+15/49 Test #15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown ................   Passed    1.03 sec
+      Start 16: TickerFeed.DecodesFiltersAndCountsTypedUpdates
+16/49 Test #16: TickerFeed.DecodesFiltersAndCountsTypedUpdates ..............................   Passed    0.03 sec
+      Start 17: TickerFeed.PropagatesParserAndConsumerFailures
+17/49 Test #17: TickerFeed.PropagatesParserAndConsumerFailures ..............................   Passed    0.02 sec
+      Start 18: Subscription.BuildsAndValidatesMultiSymbolSubscription
+18/49 Test #18: Subscription.BuildsAndValidatesMultiSymbolSubscription ......................   Passed    0.01 sec
+      Start 19: CsvWriter.WritesEscapedRoundTrippableRows
+19/49 Test #19: CsvWriter.WritesEscapedRoundTrippableRows ...................................   Passed    0.01 sec
+      Start 20: CsvWriter.ReportsStreamFailures
+20/49 Test #20: CsvWriter.ReportsStreamFailures .............................................   Passed    0.01 sec
+      Start 21: NumericFormatting.RoundsExactStatisticsToNearestEvenTick
+21/49 Test #21: NumericFormatting.RoundsExactStatisticsToNearestEvenTick ....................   Passed    0.01 sec
+      Start 22: CsvSink.FlushesByThresholdOrDeadline
+22/49 Test #22: CsvSink.FlushesByThresholdOrDeadline ........................................   Passed    0.26 sec
+      Start 23: CsvSink.CloseFlushesAndCancelsPendingWork
+23/49 Test #23: CsvSink.CloseFlushesAndCancelsPendingWork ...................................   Passed    0.02 sec
+      Start 24: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle
+24/49 Test #24: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle .....................   Passed    0.03 sec
+      Start 25: Config.ParsesRequiredDefaultsAndOverrides
+25/49 Test #25: Config.ParsesRequiredDefaultsAndOverrides ...................................   Passed    0.01 sec
+      Start 26: Config.PreservesUnknownAndDuplicateKeyPolicies
+26/49 Test #26: Config.PreservesUnknownAndDuplicateKeyPolicies ..............................   Passed    0.01 sec
+      Start 27: Config.RejectsInvalidConfiguration
+27/49 Test #27: Config.RejectsInvalidConfiguration ..........................................   Passed    0.01 sec
+      Start 28: Config.ValidatesUnusedFieldsAndEntireInput
+28/49 Test #28: Config.ValidatesUnusedFieldsAndEntireInput ..................................   Passed    0.01 sec
+      Start 29: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies
+29/49 Test #29: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies ..........   Passed    0.01 sec
+      Start 30: Config.ReportsFirstValidationFailure
+30/49 Test #30: Config.ReportsFirstValidationFailure ........................................   Passed    0.01 sec
+      Start 31: Config.LoadsFilesAndResolvesOutputPath
+31/49 Test #31: Config.LoadsFilesAndResolvesOutputPath ......................................   Passed    0.01 sec
+      Start 32: Pipeline.FixtureMatchesIndependentExpectedCsv
+32/49 Test #32: Pipeline.FixtureMatchesIndependentExpectedCsv ...............................   Passed    0.01 sec
+      Start 33: Logging.FormatsDiagnosticsAndContainsStreamFailures
+33/49 Test #33: Logging.FormatsDiagnosticsAndContainsStreamFailures .........................   Passed    0.01 sec
+      Start 34: Application.WritesCsvAndReportsFinalCounts
+34/49 Test #34: Application.WritesCsvAndReportsFinalCounts ..................................   Passed    0.01 sec
+      Start 35: Application.ConnectionFailurePreservesExistingOutput
+35/49 Test #35: Application.ConnectionFailurePreservesExistingOutput ........................   Passed    0.01 sec
+      Start 36: Application.ProcessingFailureStopsAndFlushesPreviousRows
+36/49 Test #36: Application.ProcessingFailureStopsAndFlushesPreviousRows ....................   Passed    0.01 sec
+      Start 37: Application.ProcessingFailureSurvivesCloseDeadline
+37/49 Test #37: Application.ProcessingFailureSurvivesCloseDeadline ..........................   Passed    1.01 sec
+      Start 38: Application.CapacityFailureStopsAndFlushesAcceptedRows
+38/49 Test #38: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.02 sec
+      Start 39: Application.SignalShutdownIsGraceful
+39/49 Test #39: Application.SignalShutdownIsGraceful ........................................   Passed    0.09 sec
+      Start 40: Application.TimedOutputFailureStopsIdleFeed
+40/49 Test #40: Application.TimedOutputFailureStopsIdleFeed .................................   Passed    0.04 sec
+      Start 41: Application.SignalDuringConnectionSetupPreservesExistingOutput
+41/49 Test #41: Application.SignalDuringConnectionSetupPreservesExistingOutput ..............   Passed    0.04 sec
+      Start 42: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure
+42/49 Test #42: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure .........   Passed    0.02 sec
+      Start 43: Application.CloseDeadlineBoundsUnresponsivePeer
+43/49 Test #43: Application.CloseDeadlineBoundsUnresponsivePeer .............................   Passed    1.05 sec
+      Start 44: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink
+44/49 Test #44: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink ......................   Passed    0.02 sec
+      Start 45: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures
+45/49 Test #45: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures ..................   Passed    0.01 sec
+      Start 46: Price.ParsesAndRoundTripsExactDecimalTicks
+46/49 Test #46: Price.ParsesAndRoundTripsExactDecimalTicks ..................................   Passed    0.01 sec
+      Start 47: Timestamp.ParsesFormatsAndValidatesUtc
+47/49 Test #47: Timestamp.ParsesFormatsAndValidatesUtc ......................................   Passed    0.02 sec
+      Start 48: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures
+48/49 Test #48: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures ...........   Passed    0.01 sec
+      Start 49: RunControl.StopAndCompletionAreIdempotent
+49/49 Test #49: RunControl.StopAndCompletionAreIdempotent ...................................   Passed    0.01 sec
 
-100% tests passed out of 48
+100% tests passed out of 49
 
-Total Test time (real) =   4.88 sec
+Total Test time (real) =   6.04 sec
 
-Debug / UndefinedBehaviorSanitizer
+UBSan
 Command: UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ctest --test-dir build/submission-ubsan --output-on-failure
 Test project build/submission-ubsan
       Start  1: SlidingWindow.ValidatesDurationOnDirectConstruction
- 1/48 Test  #1: SlidingWindow.ValidatesDurationOnDirectConstruction .........................   Passed    0.04 sec
+ 1/49 Test  #1: SlidingWindow.ValidatesDurationOnDirectConstruction .........................   Passed    0.04 sec
       Start  2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary
- 2/48 Test  #2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary ..................   Passed    0.04 sec
+ 2/49 Test  #2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary ..................   Passed    0.04 sec
       Start  3: SlidingWindow.HandlesDuplicateTradeIds
- 3/48 Test  #3: SlidingWindow.HandlesDuplicateTradeIds ......................................   Passed    0.04 sec
+ 3/49 Test  #3: SlidingWindow.HandlesDuplicateTradeIds ......................................   Passed    0.04 sec
       Start  4: SlidingWindow.EnforcesCapacityAfterExpirationWithoutDroppingSamples
- 4/48 Test  #4: SlidingWindow.EnforcesCapacityAfterExpirationWithoutDroppingSamples .........   Passed    0.04 sec
+ 4/49 Test  #4: SlidingWindow.EnforcesCapacityAfterExpirationWithoutDroppingSamples .........   Passed    0.04 sec
       Start  5: SlidingWindow.RejectsInvalidOrOutOfOrderUpdatesWithoutMutation
- 5/48 Test  #5: SlidingWindow.RejectsInvalidOrOutOfOrderUpdatesWithoutMutation ..............   Passed    0.04 sec
+ 5/49 Test  #5: SlidingWindow.RejectsInvalidOrOutOfOrderUpdatesWithoutMutation ..............   Passed    0.04 sec
       Start  6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration
- 6/48 Test  #6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration .........   Passed    0.04 sec
+ 6/49 Test  #6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration .........   Passed    0.04 sec
       Start  7: SlidingWindow.RandomizedUpdatesMatchIndependentReference
- 7/48 Test  #7: SlidingWindow.RandomizedUpdatesMatchIndependentReference ....................   Passed    0.76 sec
+ 7/49 Test  #7: SlidingWindow.RandomizedUpdatesMatchIndependentReference ....................   Passed    0.75 sec
       Start  8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors
- 8/48 Test  #8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors ...   Passed    0.04 sec
+ 8/49 Test  #8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors ...   Passed    0.04 sec
       Start  9: TickerParser.DecodesTickerAndFiltersControlMessages
- 9/48 Test  #9: TickerParser.DecodesTickerAndFiltersControlMessages .........................   Passed    0.04 sec
+ 9/49 Test  #9: TickerParser.DecodesTickerAndFiltersControlMessages .........................   Passed    0.04 sec
       Start 10: TickerParser.RejectsMalformedTickerMessages
-10/48 Test #10: TickerParser.RejectsMalformedTickerMessages .................................   Passed    0.04 sec
+10/49 Test #10: TickerParser.RejectsMalformedTickerMessages .................................   Passed    0.05 sec
       Start 11: TickerParser.SurfacesExchangeErrors
-11/48 Test #11: TickerParser.SurfacesExchangeErrors .........................................   Passed    0.04 sec
+11/49 Test #11: TickerParser.SurfacesExchangeErrors .........................................   Passed    0.04 sec
       Start 12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls
-12/48 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.05 sec
+12/49 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.05 sec
       Start 13: FeedConnection.RejectsTransportOrProtocolViolations
-13/48 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.06 sec
+13/49 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.05 sec
       Start 14: FeedConnection.BoundsConnectionAndShutdown
-14/48 Test #14: FeedConnection.BoundsConnectionAndShutdown ..................................   Passed    2.06 sec
-      Start 15: TickerFeed.DecodesFiltersAndCountsTypedUpdates
-15/48 Test #15: TickerFeed.DecodesFiltersAndCountsTypedUpdates ..............................   Passed    0.08 sec
-      Start 16: TickerFeed.PropagatesParserAndConsumerFailures
-16/48 Test #16: TickerFeed.PropagatesParserAndConsumerFailures ..............................   Passed    0.05 sec
-      Start 17: Subscription.BuildsAndValidatesMultiSymbolSubscription
-17/48 Test #17: Subscription.BuildsAndValidatesMultiSymbolSubscription ......................   Passed    0.04 sec
-      Start 18: CsvWriter.WritesEscapedRoundTrippableRows
-18/48 Test #18: CsvWriter.WritesEscapedRoundTrippableRows ...................................   Passed    0.04 sec
-      Start 19: CsvWriter.ReportsStreamFailures
-19/48 Test #19: CsvWriter.ReportsStreamFailures .............................................   Passed    0.04 sec
-      Start 20: NumericFormatting.RoundsExactStatisticsToNearestEvenTick
-20/48 Test #20: NumericFormatting.RoundsExactStatisticsToNearestEvenTick ....................   Passed    0.04 sec
-      Start 21: CsvSink.FlushesByThresholdOrDeadline
-21/48 Test #21: CsvSink.FlushesByThresholdOrDeadline ........................................   Passed    0.30 sec
-      Start 22: CsvSink.CloseFlushesAndCancelsPendingWork
-22/48 Test #22: CsvSink.CloseFlushesAndCancelsPendingWork ...................................   Passed    0.07 sec
-      Start 23: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle
-23/48 Test #23: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle .....................   Passed    0.07 sec
-      Start 24: Config.ParsesRequiredDefaultsAndOverrides
-24/48 Test #24: Config.ParsesRequiredDefaultsAndOverrides ...................................   Passed    0.04 sec
-      Start 25: Config.PreservesUnknownAndDuplicateKeyPolicies
-25/48 Test #25: Config.PreservesUnknownAndDuplicateKeyPolicies ..............................   Passed    0.04 sec
-      Start 26: Config.RejectsInvalidConfiguration
-26/48 Test #26: Config.RejectsInvalidConfiguration ..........................................   Passed    0.04 sec
-      Start 27: Config.ValidatesUnusedFieldsAndEntireInput
-27/48 Test #27: Config.ValidatesUnusedFieldsAndEntireInput ..................................   Passed    0.04 sec
-      Start 28: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies
-28/48 Test #28: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies ..........   Passed    0.04 sec
-      Start 29: Config.ReportsFirstValidationFailure
-29/48 Test #29: Config.ReportsFirstValidationFailure ........................................   Passed    0.04 sec
-      Start 30: Config.LoadsFilesAndResolvesOutputPath
-30/48 Test #30: Config.LoadsFilesAndResolvesOutputPath ......................................   Passed    0.06 sec
-      Start 31: Pipeline.FixtureMatchesIndependentExpectedCsv
-31/48 Test #31: Pipeline.FixtureMatchesIndependentExpectedCsv ...............................   Passed    0.04 sec
-      Start 32: Logging.FormatsDiagnosticsAndContainsStreamFailures
-32/48 Test #32: Logging.FormatsDiagnosticsAndContainsStreamFailures .........................   Passed    0.04 sec
-      Start 33: Application.WritesCsvAndReportsFinalCounts
-33/48 Test #33: Application.WritesCsvAndReportsFinalCounts ..................................   Passed    0.05 sec
-      Start 34: Application.ConnectionFailurePreservesExistingOutput
-34/48 Test #34: Application.ConnectionFailurePreservesExistingOutput ........................   Passed    0.05 sec
-      Start 35: Application.ProcessingFailureStopsAndFlushesPreviousRows
-35/48 Test #35: Application.ProcessingFailureStopsAndFlushesPreviousRows ....................   Passed    0.05 sec
-      Start 36: Application.ProcessingFailureSurvivesCloseDeadline
-36/48 Test #36: Application.ProcessingFailureSurvivesCloseDeadline ..........................   Passed    1.06 sec
-      Start 37: Application.CapacityFailureStopsAndFlushesAcceptedRows
-37/48 Test #37: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.08 sec
-      Start 38: Application.SignalShutdownIsGraceful
-38/48 Test #38: Application.SignalShutdownIsGraceful ........................................   Passed    0.12 sec
-      Start 39: Application.TimedOutputFailureStopsIdleFeed
-39/48 Test #39: Application.TimedOutputFailureStopsIdleFeed .................................   Passed    0.08 sec
-      Start 40: Application.SignalDuringConnectionSetupPreservesExistingOutput
-40/48 Test #40: Application.SignalDuringConnectionSetupPreservesExistingOutput ..............   Passed    0.07 sec
-      Start 41: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure
-41/48 Test #41: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure .........   Passed    0.06 sec
-      Start 42: Application.CloseDeadlineBoundsUnresponsivePeer
-42/48 Test #42: Application.CloseDeadlineBoundsUnresponsivePeer .............................   Passed    1.09 sec
-      Start 43: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink
-43/48 Test #43: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink ......................   Passed    0.07 sec
-      Start 44: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures
-44/48 Test #44: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures ..................   Passed    0.04 sec
-      Start 45: Price.ParsesAndRoundTripsExactDecimalTicks
-45/48 Test #45: Price.ParsesAndRoundTripsExactDecimalTicks ..................................   Passed    0.05 sec
-      Start 46: Timestamp.ParsesFormatsAndValidatesUtc
-46/48 Test #46: Timestamp.ParsesFormatsAndValidatesUtc ......................................   Passed    0.06 sec
-      Start 47: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures
-47/48 Test #47: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures ...........   Passed    0.04 sec
-      Start 48: RunControl.StopAndCompletionAreIdempotent
-48/48 Test #48: RunControl.StopAndCompletionAreIdempotent ...................................   Passed    0.04 sec
+14/49 Test #14: FeedConnection.BoundsConnectionAndShutdown ..................................   Passed    2.07 sec
+      Start 15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown
+15/49 Test #15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown ................   Passed    1.08 sec
+      Start 16: TickerFeed.DecodesFiltersAndCountsTypedUpdates
+16/49 Test #16: TickerFeed.DecodesFiltersAndCountsTypedUpdates ..............................   Passed    0.08 sec
+      Start 17: TickerFeed.PropagatesParserAndConsumerFailures
+17/49 Test #17: TickerFeed.PropagatesParserAndConsumerFailures ..............................   Passed    0.05 sec
+      Start 18: Subscription.BuildsAndValidatesMultiSymbolSubscription
+18/49 Test #18: Subscription.BuildsAndValidatesMultiSymbolSubscription ......................   Passed    0.04 sec
+      Start 19: CsvWriter.WritesEscapedRoundTrippableRows
+19/49 Test #19: CsvWriter.WritesEscapedRoundTrippableRows ...................................   Passed    0.04 sec
+      Start 20: CsvWriter.ReportsStreamFailures
+20/49 Test #20: CsvWriter.ReportsStreamFailures .............................................   Passed    0.04 sec
+      Start 21: NumericFormatting.RoundsExactStatisticsToNearestEvenTick
+21/49 Test #21: NumericFormatting.RoundsExactStatisticsToNearestEvenTick ....................   Passed    0.04 sec
+      Start 22: CsvSink.FlushesByThresholdOrDeadline
+22/49 Test #22: CsvSink.FlushesByThresholdOrDeadline ........................................   Passed    0.30 sec
+      Start 23: CsvSink.CloseFlushesAndCancelsPendingWork
+23/49 Test #23: CsvSink.CloseFlushesAndCancelsPendingWork ...................................   Passed    0.07 sec
+      Start 24: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle
+24/49 Test #24: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle .....................   Passed    0.07 sec
+      Start 25: Config.ParsesRequiredDefaultsAndOverrides
+25/49 Test #25: Config.ParsesRequiredDefaultsAndOverrides ...................................   Passed    0.04 sec
+      Start 26: Config.PreservesUnknownAndDuplicateKeyPolicies
+26/49 Test #26: Config.PreservesUnknownAndDuplicateKeyPolicies ..............................   Passed    0.04 sec
+      Start 27: Config.RejectsInvalidConfiguration
+27/49 Test #27: Config.RejectsInvalidConfiguration ..........................................   Passed    0.04 sec
+      Start 28: Config.ValidatesUnusedFieldsAndEntireInput
+28/49 Test #28: Config.ValidatesUnusedFieldsAndEntireInput ..................................   Passed    0.04 sec
+      Start 29: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies
+29/49 Test #29: Config.ValidatesDirectConstructionWithModuleAndApplicationPolicies ..........   Passed    0.04 sec
+      Start 30: Config.ReportsFirstValidationFailure
+30/49 Test #30: Config.ReportsFirstValidationFailure ........................................   Passed    0.04 sec
+      Start 31: Config.LoadsFilesAndResolvesOutputPath
+31/49 Test #31: Config.LoadsFilesAndResolvesOutputPath ......................................   Passed    0.06 sec
+      Start 32: Pipeline.FixtureMatchesIndependentExpectedCsv
+32/49 Test #32: Pipeline.FixtureMatchesIndependentExpectedCsv ...............................   Passed    0.04 sec
+      Start 33: Logging.FormatsDiagnosticsAndContainsStreamFailures
+33/49 Test #33: Logging.FormatsDiagnosticsAndContainsStreamFailures .........................   Passed    0.04 sec
+      Start 34: Application.WritesCsvAndReportsFinalCounts
+34/49 Test #34: Application.WritesCsvAndReportsFinalCounts ..................................   Passed    0.05 sec
+      Start 35: Application.ConnectionFailurePreservesExistingOutput
+35/49 Test #35: Application.ConnectionFailurePreservesExistingOutput ........................   Passed    0.05 sec
+      Start 36: Application.ProcessingFailureStopsAndFlushesPreviousRows
+36/49 Test #36: Application.ProcessingFailureStopsAndFlushesPreviousRows ....................   Passed    0.05 sec
+      Start 37: Application.ProcessingFailureSurvivesCloseDeadline
+37/49 Test #37: Application.ProcessingFailureSurvivesCloseDeadline ..........................   Passed    1.06 sec
+      Start 38: Application.CapacityFailureStopsAndFlushesAcceptedRows
+38/49 Test #38: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.07 sec
+      Start 39: Application.SignalShutdownIsGraceful
+39/49 Test #39: Application.SignalShutdownIsGraceful ........................................   Passed    0.12 sec
+      Start 40: Application.TimedOutputFailureStopsIdleFeed
+40/49 Test #40: Application.TimedOutputFailureStopsIdleFeed .................................   Passed    0.08 sec
+      Start 41: Application.SignalDuringConnectionSetupPreservesExistingOutput
+41/49 Test #41: Application.SignalDuringConnectionSetupPreservesExistingOutput ..............   Passed    0.07 sec
+      Start 42: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure
+42/49 Test #42: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure .........   Passed    0.06 sec
+      Start 43: Application.CloseDeadlineBoundsUnresponsivePeer
+43/49 Test #43: Application.CloseDeadlineBoundsUnresponsivePeer .............................   Passed    1.09 sec
+      Start 44: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink
+44/49 Test #44: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink ......................   Passed    0.07 sec
+      Start 45: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures
+45/49 Test #45: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures ..................   Passed    0.04 sec
+      Start 46: Price.ParsesAndRoundTripsExactDecimalTicks
+46/49 Test #46: Price.ParsesAndRoundTripsExactDecimalTicks ..................................   Passed    0.05 sec
+      Start 47: Timestamp.ParsesFormatsAndValidatesUtc
+47/49 Test #47: Timestamp.ParsesFormatsAndValidatesUtc ......................................   Passed    0.10 sec
+      Start 48: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures
+48/49 Test #48: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures ...........   Passed    0.04 sec
+      Start 49: RunControl.StopAndCompletionAreIdempotent
+49/49 Test #49: RunControl.StopAndCompletionAreIdempotent ...................................   Passed    0.04 sec
 
-100% tests passed out of 48
+100% tests passed out of 49
 
-Total Test time (real) =   7.51 sec
+Total Test time (real) =   8.67 sec
 
 Independent Decimal fixture verification
 Command: python3 tools/verify_csv.py --config data/fixture_config.json --require-expiration
@@ -232,5 +233,5 @@ No ASan application pass is claimed.
 
 Linux verification
 No Linux runtime, Docker or Podman is available on this development host.
-.gitlab-ci.yml configures GCC/Clang Release and Clang ASan/UBSan jobs.
-The pipeline has not been run here; Linux and ASan results remain pending runner execution.
+.github/workflows/ci.yml configures GCC/Clang Release and Clang ASan/UBSan jobs.
+The GitHub Actions workflow has not run yet; Linux and ASan results remain pending.

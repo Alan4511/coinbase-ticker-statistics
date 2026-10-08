@@ -130,5 +130,30 @@ TEST(FeedConnection, BoundsConnectionAndShutdown) {
     }
 }
 
+TEST(FeedConnection, ReportsPeerErrorCloseAndBoundsPeerTlsShutdown) {
+    test::TestTrustStore trust;
+    for (const auto reply : {test::ExchangeReply::ErrorClose, test::ExchangeReply::CloseWithoutTlsShutdown}) {
+        SCOPED_TRACE(reply == test::ExchangeReply::ErrorClose ? "peer error close" : "peer stalled TLS shutdown");
+        test::LoopbackExchange exchange(symbols, {}, reply);
+        auto config = exchange.config();
+        config.close_timeout = Duration{1};
+        ConnectionRun client;
+        ASSERT_RESULT_OK(client.configure(config));
+        const auto started = std::chrono::steady_clock::now();
+        client.run();
+        EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds{3});
+        const auto expected = reply == test::ExchangeReply::ErrorClose ? ErrorCode::Protocol : ErrorCode::Transport;
+        ASSERT_RESULT_ERROR(client.outcome, expected);
+        EXPECT_TRUE(client.messages.empty());
+        if (reply == test::ExchangeReply::ErrorClose) {
+            EXPECT_TRUE(client.outcome.error().message.contains("code=1011"));
+            EXPECT_TRUE(exchange.completed_successfully());
+        }
+        else {
+            EXPECT_EQ(client.outcome.error().message, "WebSocket close deadline exceeded");
+        }
+    }
+}
+
 } // namespace
 } // namespace coinbase_ticker_statistics

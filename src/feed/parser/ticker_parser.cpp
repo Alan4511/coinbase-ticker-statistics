@@ -12,7 +12,9 @@ Result<std::optional<TickerUpdate>> parse_ticker_message(std::string_view messag
         return fail(ErrorCode::InvalidInput, "type: expected a nonempty string");
     if (header.value().type == key::error) {
         auto description = json_utils::read_json<std::string>(header.value().message.str);
-        return fail(ErrorCode::Protocol, "Coinbase feed error: " + description.value_or("unspecified exchange error"));
+        if (!description.has_value() || description.value().empty())
+            return fail(ErrorCode::Protocol, "Coinbase feed error: unspecified exchange error");
+        return fail(ErrorCode::Protocol, "Coinbase feed error: " + description.value());
     }
     if (header.value().type != key::ticker)
         return std::nullopt;
