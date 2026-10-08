@@ -1,184 +1,107 @@
 #include "feed/parser/parse_fields.hpp"
 
+#include <boost/date_time/posix_time/posix_time.hpp>
+
 #include <algorithm>
 #include <charconv>
 #include <limits>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace coinbase_ticker_statistics {
 namespace {
 
-constexpr unsigned decimal_base = 10;
-constexpr unsigned timestamp_fraction_digits = 9;
-constexpr unsigned minimum_year = 1970;
-constexpr unsigned maximum_year = 2200;
-constexpr unsigned hours_per_day = 24;
-constexpr unsigned minutes_per_hour = 60;
-constexpr unsigned seconds_per_minute = 60;
-constexpr std::size_t timestamp_seconds_length = 19;
-
-bool is_decimal_digit(char value) {
-    return value >= '0' && value <= '9';
-}
-
-unsigned parse_decimal_digits(std::string_view text, std::size_t start, std::size_t count) {
-    unsigned result{};
-    for (const char digit : text.substr(start, count)) {
-        // Callers have already validated every character as a decimal digit.
-        result = result * decimal_base + static_cast<unsigned>(digit - '0');
-    }
-    return result;
-}
-
-Result<Price> convert_decimal_price(std::string_view significand, std::size_t fractional_digits, int exponent) {
-    // Removing insignificant zeros admits extra decimal places only when they
-    // do not change the value. No input price is rounded to fit the tick grid.
-    std::size_t trailing_zeros{};
-    while (!significand.empty() && (significand.back() == '0' || significand.back() == '.')) {
-        trailing_zeros += significand.back() == '0';
-        significand.remove_suffix(1);
-    }
-    const auto shift = static_cast<std::int64_t>(Price::decimal_places) + exponent -
-                       static_cast<std::int64_t>(fractional_digits) + static_cast<std::int64_t>(trailing_zeros);
-    if (shift < 0)
-        return fail(ErrorCode::OutOfRange, "Price cannot be represented exactly with eight decimal places");
-    if (shift > std::numeric_limits<std::int64_t>::digits10)
+Result<std::uint64_t> parse_price_digits(std::string_view digits) {
+    if (digits.empty())
+        return 0;
+    std::uint64_t value{};
+    const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
+    if (error == std::errc::invalid_argument || end != digits.data() + digits.size())
+        return fail(ErrorCode::InvalidInput, "Price must contain only decimal digits and an optional decimal point");
+    if (error == std::errc::result_out_of_range)
         return fail(ErrorCode::OutOfRange, "Price exceeds its fixed-point range");
-
-    constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
-    std::int64_t ticks{};
-    for (const char character : significand) {
-        if (character == '.')
-            continue;
-        const auto digit = static_cast<std::int64_t>(character - '0');
-        if (ticks > (maximum - digit) / decimal_base)
-            return fail(ErrorCode::OutOfRange, "Price exceeds its fixed-point range");
-        ticks = ticks * decimal_base + digit;
-    }
-    for (std::int64_t index = 0; index < shift; ++index) {
-        if (ticks > maximum / decimal_base)
-            return fail(ErrorCode::OutOfRange, "Price exceeds its fixed-point range");
-        ticks *= decimal_base;
-    }
-    return Price{ticks};
+    return value;
 }
 
 } // namespace
 
 Result<Price> parse_price(std::string_view text) {
-    // Validate syntax before converting directly to integer ticks.
-    if (text.empty() || !is_decimal_digit(text.front())) {
+    const auto decimal_point = text.find('.');
+    const auto whole = text.substr(0, decimal_point);
+    auto fraction = decimal_point == std::string_view::npos ? std::string_view{} : text.substr(decimal_point + 1);
+    if (whole.empty())
         return fail(ErrorCode::InvalidInput, "Price must begin with a decimal digit");
-    }
-    // Bound position arithmetic independently of the transport message-size limit.
-    if (!std::in_range<int>(text.size()))
-        return fail(ErrorCode::OutOfRange, "Price text exceeds the supported length");
-    std::size_t position{};
-    std::size_t fractional_digits{};
-    bool nonzero{};
-    const auto consume_decimal_digits = [&text, &position, &nonzero] {
-        const auto start = position;
-        while (position < text.size() && is_decimal_digit(text[position])) {
-            nonzero = nonzero || text[position] != '0';
-            ++position;
-        }
-        return position != start;
-    };
-    consume_decimal_digits();
-    if (position < text.size() && text[position] == '.') {
-        ++position;
-        const auto fraction_start = position;
-        if (!consume_decimal_digits())
-            return fail(ErrorCode::InvalidInput, "Missing fractional digits");
-        fractional_digits = position - fraction_start;
-    }
-    const bool nonzero_significand = nonzero;
-    const auto significand_end = position;
-    std::string_view exponent_text;
-    if (position < text.size() && (text[position] == 'e' || text[position] == 'E')) {
-        ++position;
-        const auto exponent_start = position;
-        if (position < text.size() && (text[position] == '+' || text[position] == '-'))
-            ++position;
-        if (!consume_decimal_digits())
-            return fail(ErrorCode::InvalidInput, "Missing exponent digits");
-        exponent_text = text.substr(exponent_start, position - exponent_start);
-    }
-    if (position != text.size())
-        return fail(ErrorCode::InvalidInput, "Invalid price syntax");
+    if (decimal_point != std::string_view::npos && fraction.empty())
+        return fail(ErrorCode::InvalidInput, "Missing fractional digits");
 
-    if (!nonzero_significand)
-        return Price{};
-    int exponent{};
-    if (!exponent_text.empty()) {
-        if (exponent_text.front() == '+')
-            exponent_text.remove_prefix(1);
-        const auto [end, error] =
-            std::from_chars(exponent_text.data(), exponent_text.data() + exponent_text.size(), exponent);
-        if (error != std::errc{} || end != exponent_text.data() + exponent_text.size())
-            return fail(ErrorCode::OutOfRange, "Price exponent exceeds the supported range");
-    }
-    return convert_decimal_price(text.substr(0, significand_end), fractional_digits, exponent);
+    // Extra trailing zeros do not require a finer tick grid; input prices are never rounded.
+    while (!fraction.empty() && fraction.back() == '0')
+        fraction.remove_suffix(1);
+
+    auto whole_value = parse_price_digits(whole);
+    if (!whole_value.has_value())
+        return std::unexpected(std::move(whole_value.error()));
+    auto fraction_value = parse_price_digits(fraction);
+    if (!fraction_value.has_value())
+        return std::unexpected(std::move(fraction_value.error()));
+    if (fraction.size() > Price::decimal_places)
+        return fail(ErrorCode::OutOfRange, "Price cannot be represented exactly with eight decimal places");
+
+    auto fractional_ticks = fraction_value.value();
+    for (auto digits = fraction.size(); digits < Price::decimal_places; ++digits)
+        fractional_ticks *= 10;
+
+    constexpr auto scale = static_cast<std::uint64_t>(Price::ticks_per_unit);
+    constexpr auto maximum_ticks = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    // Check before multiplying or adding, so even the maximum supported price is exact.
+    if (whole_value.value() > (maximum_ticks - fractional_ticks) / scale)
+        return fail(ErrorCode::OutOfRange, "Price exceeds its fixed-point range");
+    return Price{static_cast<std::int64_t>(whole_value.value() * scale + fractional_ticks)};
 }
 
 Result<Timestamp> parse_utc_timestamp(std::string_view text) {
-    constexpr std::size_t shortest_timestamp = timestamp_seconds_length + 1;
-    constexpr std::size_t longest_timestamp = timestamp_seconds_length + 1 + timestamp_fraction_digits + 1;
-    if (text.size() < shortest_timestamp || text.size() > longest_timestamp || text.back() != 'Z') {
+    constexpr std::string_view layout = "0000-00-00T00:00:00";
+    constexpr std::size_t fractional_precision = 9;
+    if (text.size() < layout.size() + 1 || text.size() > layout.size() + fractional_precision + 2 ||
+        !text.ends_with('Z'))
         return fail(ErrorCode::InvalidInput, "Expected a UTC timestamp ending in Z");
-    }
-    constexpr std::size_t year_separator = 4;
-    constexpr std::size_t month_separator = 7;
-    constexpr std::size_t date_separator = 10;
-    constexpr std::size_t hour_separator = 13;
-    constexpr std::size_t minute_separator = 16;
-    if (text[year_separator] != '-' || text[month_separator] != '-' || text[date_separator] != 'T' ||
-        text[hour_separator] != ':' || text[minute_separator] != ':') {
-        return fail(ErrorCode::InvalidInput, "Expected YYYY-MM-DDTHH:MM:SS[.fraction]Z");
-    }
-    for (std::size_t index = 0; index < timestamp_seconds_length; ++index) {
-        const bool separator = index == year_separator || index == month_separator || index == date_separator ||
-                               index == hour_separator || index == minute_separator;
-        if (!separator && !is_decimal_digit(text[index])) {
-            return fail(ErrorCode::InvalidInput, "Expected a decimal digit in timestamp");
-        }
-    }
-    constexpr std::size_t year_digits = 4;
-    constexpr std::size_t component_digits = 2;
-    const unsigned parsed_year = parse_decimal_digits(text, 0, year_digits);
-    const unsigned parsed_month = parse_decimal_digits(text, year_separator + 1, component_digits);
-    const unsigned parsed_day = parse_decimal_digits(text, month_separator + 1, component_digits);
-    const unsigned parsed_hour = parse_decimal_digits(text, date_separator + 1, component_digits);
-    const unsigned parsed_minute = parse_decimal_digits(text, hour_separator + 1, component_digits);
-    const unsigned parsed_second = parse_decimal_digits(text, minute_separator + 1, component_digits);
-    if (parsed_year < minimum_year || parsed_year > maximum_year || parsed_hour >= hours_per_day ||
-        parsed_minute >= minutes_per_hour || parsed_second >= seconds_per_minute) {
-        return fail(ErrorCode::InvalidInput, "Timestamp component is out of range");
-    }
-    const std::chrono::year_month_day date{std::chrono::year{static_cast<int>(parsed_year)},
-                                           std::chrono::month{parsed_month},
-                                           std::chrono::day{parsed_day}};
-    if (!date.ok()) {
-        return fail(ErrorCode::InvalidInput, "Timestamp contains an invalid calendar date");
-    }
 
-    unsigned fraction{};
-    if (text.size() > shortest_timestamp) {
-        constexpr std::size_t fraction_start = timestamp_seconds_length + 1;
-        if (text[timestamp_seconds_length] != '.' || text.size() == fraction_start + 1) {
-            return fail(ErrorCode::InvalidInput, "Timestamp fraction must contain one to nine decimal digits");
-        }
-        const std::size_t fraction_digits = text.size() - fraction_start - 1;
-        const auto fractional_text = text.substr(fraction_start, fraction_digits);
-        if (!std::ranges::all_of(fractional_text, is_decimal_digit))
-            return fail(ErrorCode::InvalidInput, "Expected a decimal digit in timestamp fraction");
-        fraction = parse_decimal_digits(text, fraction_start, fraction_digits);
-        for (std::size_t index = fraction_digits; index < timestamp_fraction_digits; ++index) {
-            fraction *= decimal_base;
-        }
+    const auto is_decimal_digit = [](char character) {
+        return character >= '0' && character <= '9';
+    };
+    for (std::size_t position = 0; position < layout.size(); ++position) {
+        if (layout[position] == '0' ? !is_decimal_digit(text[position]) : text[position] != layout[position])
+            return fail(ErrorCode::InvalidInput, "Expected YYYY-MM-DDTHH:MM:SS[.fraction]Z");
     }
-    return std::chrono::sys_days{date} + std::chrono::hours{parsed_hour} + std::chrono::minutes{parsed_minute} +
-           std::chrono::seconds{parsed_second} + std::chrono::nanoseconds{fraction};
+    const auto year = text.substr(0, 4);
+    const auto hour = text.substr(11, 2);
+    const auto minute = text.substr(14, 2);
+    const auto second = text.substr(17, 2);
+    if (year < "1970" || year > "2200" || hour > "23" || minute > "59" || second > "59")
+        return fail(ErrorCode::InvalidInput, "Timestamp component is out of range");
+
+    const auto body = text.substr(0, text.size() - 1); // Boost's ISO parser expects no UTC suffix.
+    const auto fraction = body.substr(layout.size());
+    if (!fraction.empty()) {
+        if (!fraction.starts_with('.') || fraction.size() < 2)
+            return fail(ErrorCode::InvalidInput, "Timestamp fraction must contain one to nine decimal digits");
+        if (!std::ranges::all_of(fraction.substr(1), is_decimal_digit))
+            return fail(ErrorCode::InvalidInput, "Expected a decimal digit in timestamp fraction");
+    }
+    // Boost otherwise normalizes invalid clock fields and truncates excess fractional digits.
+    // Nanosecond configuration is private to this file; no Boost date/time type crosses the API.
+    static_assert(boost::posix_time::time_duration::num_fractional_digits() == fractional_precision);
+    try {
+        const auto parsed = boost::posix_time::from_iso_extended_string(std::string(body));
+        const boost::posix_time::ptime epoch{boost::gregorian::date{1970, 1, 1}};
+        return Timestamp{std::chrono::nanoseconds{(parsed - epoch).total_nanoseconds()}};
+    } catch (const boost::bad_lexical_cast &error) {
+        return fail(ErrorCode::InvalidInput, "Invalid timestamp: " + std::string(error.what()));
+    } catch (const std::out_of_range &error) {
+        return fail(ErrorCode::InvalidInput,
+                    "Timestamp contains an invalid calendar date: " + std::string(error.what()));
+    }
 }
 
 } // namespace coinbase_ticker_statistics

@@ -1,280 +1,193 @@
 # Design decisions and tradeoffs
 
-## Architecture and ownership
+One thread runs one Asio event loop. Networking is asynchronous; decoding,
+exact statistics and sink delivery run synchronously in arrival order.
 
-```text
-Application — lifecycle, signals, RunControl and RunControlHandle
-    |
-    +— TickerFeed — FeedConnection — Beast/Asio
-    |
-    +— ApplicationFeedHandler
-            |— StatisticsProcessor — per-symbol SlidingWindow
-            |— OutputSink — CsvSink — CsvWriter
+## Event flow
+
+```mermaid
+flowchart TD
+    wire["Coinbase ticker channel: JSON messages"]
+    connection["FeedConnection<br/>DNS / TCP / verified TLS / WebSocket framing"]
+    feed["TickerFeed<br/>Glaze decoding + price/time validation"]
+    handler["ApplicationFeedHandler<br/>route typed updates"]
+    statistics["StatisticsProcessor<br/>select per-symbol SlidingWindow"]
+    writer["CsvSink / CsvWriter<br/>exact statistics → rounded decimal CSV row"]
+    buffer["Stream buffer: pending rows"]
+    flush["CsvSink: flush to file"]
+    ignored["Ignored: no statistics row"]
+    timer["Row threshold or timer from first pending row"]
+
+    wire --> connection
+    connection -->|"Framed string_view; no message copy"| feed
+    feed -->|"TickerUpdate<br/>owned symbol, integer price, UTC timestamp"| handler
+    feed -->|"Valid control / future messages"| ignored
+    handler --> statistics
+    statistics -->|"StatisticsUpdate<br/>count, exact mean/median fractions, low/high"| writer
+    statistics -->|"Retained duplicate / unsubscribed symbol"| ignored
+    writer --> buffer
+    buffer --> flush
+    timer -.-> flush
 ```
 
-One thread runs one Asio event loop. `FeedConnection` owns DNS, TCP, verified
-TLS, WebSocket operations and deadlines. `TickerFeed` owns subscription encoding,
-JSON decoding, filtering and input counters. The application handler routes each
-typed update through statistics to the sink synchronously. This preserves order
-and gives mutable state one owner without locks.
+The handler passes the returned statistics to the sink. `Result<T>` carries
+immediate errors; the feed reports failures before transport cleanup. Timer-flush
+errors report through `RunControlHandle` after the original write returns.
 
-`StatisticsProcessor` has no networking, logging or output dependencies.
-`OutputSink` is a compile-time contract requiring only
-`write_statistics(update) -> Result<void>`, so other sinks can reuse statistics
-and routing without implementing CSV lifecycle methods. Templates express these
-boundaries; private transport callbacks keep Beast types out of consumer headers.
+```mermaid
+flowchart LR
+    trigger["SIGINT / SIGTERM<br/>or fatal error"] --> control["RunControl<br/>first failure<br/>one stop request"]
+    control --> stop["Application<br/>stop feed"]
+    stop --> transport["FeedConnection<br/>cancel setup<br/>or bounded close"]
+    transport --> complete["Application on_stopped<br/>close CSV / cancel signals<br/>drain I/O"]
+```
 
-The application owns runtime objects and keeps borrowed handlers, the sink and
-run-control handle alive until I/O drains. Message views and typed updates are
-borrowed only for synchronous delivery. `RunControlHandle` is retained as a
-borrowed reporting interface so reusable modules do not depend on `Application`.
-It owns no state or executor; `RunControl` owns run state and the stop policy.
-Feed callbacks carry only ticker updates and completion results; the feed and
-sink retain their run-control handles for failure reporting, while the application
-uses its own handle for lifecycle coordination. Handlers bind dependencies at
-construction, trading per-callback handle flexibility for a smaller event contract.
-`RunControl` preserves the first failure, including through reentrant shutdown
-and subsequent cleanup errors. Its running, stopping and completed states
-distinguish a stop request from completion; completion ends event processing,
-while resource cleanup and destruction may still follow.
+## Choices at a glance
 
-Shared vocabulary and JSON helpers live in `common/`; lifecycle coordination
-lives in `runtime/`. The feed root exposes its typed protocol interface,
-`parser/` decodes messages and `transport/` owns the reusable connection. Tests
-mirror these responsibilities.
+| Choice | Benefit | Cost / limit |
+| --- | --- | --- |
+| One asynchronous event loop | Ordered updates, idle flush timers and signal shutdown without locks. | Lifetime coordination; synchronous processing and disk I/O delay all callbacks. |
+| One ticker connection | Small configuration and lifecycle. | No load distribution; multiple connections require future coordination. |
+| Separate transport, protocol, statistics and sink | Reusable modules with explicit ownership; concepts check delivery contracts. | Compile-time wiring and template compilation; private transport callbacks use type erasure. |
+| Glaze typed JSON boundary | No DOM; module-owned mappings; complete values or typed errors. | Two scans for ticker dispatch; owned decoded strings and template compilation still cost resources. |
+| Exact deque + two multisets + retained-ID index | Readable expiration, duplicate filtering and exact median/extrema. | O(N) dynamically allocated storage; no pool or preallocated ring. |
+| Configurable observation limit | Explicit resource policy without silently losing samples. | Limits sample count, not process bytes; reaching it ends the run. |
+| Eight-decimal integer prices + 128-bit sum | Exact stored prices and fractions; bounded CSV rounding. | Fixed supported grid/range and wider integer division during formatting. |
+| Plain decimal price parsing; Boost.DateTime timestamps | Small field parsers using existing library facilities. | No scientific prices or timezone offsets; Boost needs guards, string copies and exception translation. |
+| CSV row/time batching on the event loop | Continuous output with fewer flushes and no extra queue/thread. | Delayed visibility/error detection; slow I/O stalls processing; flush is not durability. |
+| Strict failures; preserve first error | Predictable policy and useful root-cause reporting through cleanup. | No reconnect, recovery or best-effort continuation after malformed data. |
+| Validated startup settings with defaults | Configurable operation; modules own their validation rules. | Settings are mutable aggregates; direct construction/edits need validation. |
+| Lifecycle diagnostics to stderr | One log stream; CSV already records accepted updates. | Synchronous, best-effort logging; collection and rotation are external. |
 
-## Extensibility
+## Ownership and extensibility
 
-- **Additional feeds:** reuse `FeedConnection` for transport, with a separate
-  subscription encoder, parser and protocol adapter. The current `FeedHandler`
-  contract delivers `TickerUpdate`; other payloads need a corresponding typed
-  contract or conversion into that model.
-- **Alternative output:** implement `OutputSink::write_statistics()` and reuse
-  the templated application handler. Application wiring must still provide the
-  destination's configuration, startup and cleanup; CSV lifecycle operations
-  are not required by the delivery contract.
-- **Multiple connections:** a future feed manager can own connections for symbol
-  groups on the same event loop. It must add group configuration, track individual
-  feed readiness/completion, open shared output once, and wait for all feeds to
-  stop before completing the run and closing output. Each handler remains bound
-  to its dependencies at construction.
+`Application` owns the feed, sink, handler, signals and run control. The handler
+owns statistics; windows own their samples/indexes. `CsvSink` owns the file and
+timer; `CsvWriter` borrows its stream. Borrowed dependencies outlive pending I/O;
+message views are consumed synchronously. Statistics has no I/O dependency, and
+the sink has no feed dependency.
 
-Components may share one `RunControlHandle`, or borrow separate handles backed
-by the same `RunControl`. They share run state and shutdown policy; handles do
-not identify feeds or aggregate completion. That coordination belongs to the
-application or future manager. The shipped application uses one ticker connection
-and one CSV sink.
+`RunControl` owns run state, first failure and application-supplied stop policy.
+`RunControlHandle` borrows that policy without owning state or an executor.
+Dependencies bind at construction rather than travel with every event.
 
-## Configuration and JSON boundary
+- **New feeds:** reuse `FeedConnection`, providing subscription encoding and a
+  protocol adapter; other payloads need their own typed contract or conversion.
+- **New sinks:** implement `write_statistics(update) -> Result<void>` and reuse
+  the templated handler. Application wiring supplies configuration and lifecycle.
+- **Multiple connections:** a future manager can own symbol groups on the same
+  event loop, sharing run control. It must aggregate readiness/completion and
+  close shared output after every feed stops; handles do not coordinate that.
 
-`load_config()` reads the file into a string, calls `parse_and_validate_config(string_view)`,
-then resolves output paths before returning validated settings. Configurations
-and complete WebSocket message views use the same direct deserialization
-boundary. The file string costs a startup allocation but avoids a separate
-streaming path; feed decoding needs no copy of the framed message.
-
-[Glaze](https://github.com/stephenberry/glaze/tree/v9.0.0) maps JSON into local
-objects. Each module owns its mappings in `json_meta.hpp`; domain types remain
-independent of JSON. `common/json.hpp` translates parsing errors into `Result<T>`.
-Only successful values escape the boundary. Price and UTC timestamp conversion
-reuse domain parsers and preserve detailed errors, including `OutOfRange`.
-Allocation failure remains an emergency exception.
-
-Length-delimited input is parsed without assuming a null terminator. Unknown
-keys are ignored, but their values must contain valid JSON. Trailing content,
-comments, trailing commas and invalid UTF-8 are rejected; JSON nesting is limited
-to 256 levels. Integer conversion checks range without floating-point rounding
-and accepts positive-exponent forms such as `3e2`. Glaze's native integer reader
-rejects decimal-point and negative-exponent spellings, even when mathematically
-integral; no custom number parser is added.
-
-Ticker routing reads the message type before decoding ticker fields. This scans
-ticker messages twice but keeps control-message filtering simple without a DOM.
-The extra O(message-size) scan costs CPU; price/timestamp conversion and statistics
-run only once. Its impact on total processing time has not been measured.
-The pinned tagged-variant reader changes required-tag and dispatch semantics,
-so separate dispatch preserves the current protocol behavior.
-Decoded strings preserve JSON escapes, and the resulting update owns its symbol.
-Glaze's header-only mappings reduce manual field assembly at the cost of template
-compilation. Configuration parsing and mappings stay in the implementation, so
-including the public config API does not instantiate or expose Glaze parsing.
-No parsing throughput improvement is claimed without measurement.
-
-`symbols` and `output.path` are required. Defaults and ranges are listed in
-[Configuration](CONFIGURATION.md). Repeated valid keys use their last value;
-repeated sections replace earlier sections rather than merge fields. An invalid
-earlier field fails even if a later occurrence would replace it. Conversion
-errors follow input order; business validation proceeds through symbols, feed,
-window and output.
-
-Validation belongs to each settings module, with symbol uniqueness coordinated
-by config. Supported windows span 1 second to 365 days, also safely representable
-in nanoseconds. Direct C++ construction or later edits require `validate_config()`
-before running; settings remain a simple aggregate rather than an immutable wrapper.
-
-## Sliding-window algorithm
-
-Each symbol has an independent exchange-time window `(t-duration, t]`. A deque
-expires observations; two ordered multisets maintain the median, minimum and
-maximum. A retained-ID index filters duplicates. Updating a window that expires
-K observations costs O((K+1) log N); snapshots cost O(1), and storage is O(N).
-Tree allocation trades speed and cache locality for readable invariants. Bulk
-expiration restores partition sizes once before insertion, avoiding intermediate
-node transfers after each removal; asymptotic complexity remains unchanged.
-
-Retained duplicates do not advance time or mutate the window. IDs may be reused
-after expiration. Decreasing timestamps are fatal, and arithmetic is checked
-before mutating live state. Idle symbols emit no synthetic rows.
-
-Every accepted ticker update contributes one equally weighted price. Coinbase's
-[ticker channel](https://docs.cdp.coinbase.com/exchange/websocket-feed/channels#ticker-channel)
-can batch cascading matches, so these statistics describe received observations,
-not a complete trade tape or a volume-weighted average.
-
-The assignment permits bounded-error approximation, but this implementation
-keeps every accepted observation until expiration, subject to a configurable
-per-symbol limit (100,000 by default). Capacity is checked after prospective
-expiration; overflow fails before mutation rather than silently dropping data.
-The default is an operational starting point, not a measured exchange-rate budget.
-This bounds retained sample count, not total process bytes or allocation latency.
-Node containers remain dynamically allocated; no pool or full-capacity reservation
-is added without evidence that its complexity or upfront memory cost is worthwhile.
-Allocation failure is fatal and reported explicitly; under memory exhaustion even
-diagnostic construction is best effort, so recovery is not promised.
-
-## Asynchronous transport and shutdown
-
-Asynchronous operations let signals interrupt connection setup or an idle read,
-and let CSV timers run without another ticker arriving. A blocking loop would
-need another mechanism to wake a pending TLS/WebSocket read. The additional
-lifetime coordination supports bounded shutdown on one thread; parsing,
-calculations and formatting remain synchronous.
-
-Beast handles WebSocket framing and close; Asio handles network I/O, signals and
-timers. One deadline spans DNS, TCP, TLS, upgrade and subscription writing, then
-bounds shutdown. Beast's [WebSocket timeouts](https://www.boost.org/doc/libs/latest/libs/beast/doc/html/beast/using_websocket/timeouts.html)
-do not cover the entire connection sequence. TLS verifies the certificate chain
-and hostname against the environment's trust store. Public access removes
-authentication, not TLS negotiation. Readiness means the subscription was
-written, without waiting for its acknowledgement.
-
-On SIGINT/SIGTERM or a fatal failure, application policy stops the feed. Setup is
-cancelled or a normal WebSocket close begins; the deadline forces transport
-closure if the peer does not respond. Feed completion closes output and cancels
-the signal wait, then the event loop drains. The original failure survives
-cleanup errors; final CSV cleanup failures are also logged separately. Closing
-the connection requires no separate unsubscribe.
-
-Normal completion closes output before the event loop drains; final reporting
-does not close it again. Unexpected exceptions use an emergency abort path that
-stops the event loop and closes output even if feed completion never runs.
-This can abandon an in-progress WebSocket close handshake.
-
-One connection carries all configured symbols. Coinbase's
-[best practices](https://docs.cdp.coinbase.com/exchange/websocket-feed/best-practices)
+Coinbase's [best practices](https://docs.cdp.coinbase.com/exchange/websocket-feed/best-practices)
 recommend distributing subscriptions across connections to spread inbound load,
-especially for the full channel. A single connection keeps this assignment
-small; the transport/protocol boundary allows reuse without a connection manager.
+especially for the full channel. The submission keeps one ticker connection;
+these boundaries permit extension without implementing a manager now.
 
-## CSV batching and errors
+## Configuration and input contracts
 
-`CsvSink` owns the file, buffering policy and flush timer. `CsvWriter` formats
-rows into a reusable string and borrows the stream. Output opens only after
-connection and subscription succeed, preserving previous output on startup
-failures. Each run that opens output replaces its destination file.
+`load_config()` parses/validates a file string and resolves relative output paths.
+The startup copy keeps files and WebSocket views on one JSON boundary. Modules
+own their mappings; domain types remain independent of serialization.
 
-Rows flush after a configurable threshold or interval from the first pending
-row, whichever comes first. Later rows do not postpone that deadline. The header
-flushes immediately, and shutdown flushes the remaining batch. The stream's
-buffer holds rows without an additional queue.
+`symbols` and `output.path` are required. Endpoint, window duration, observation
+limit, message size, deadlines and flush settings are configurable; see
+[Configuration](CONFIGURATION.md) for defaults, ranges and validation policies.
 
-Batching reduces flush frequency while keeping output continuous, including
-when the feed is idle. Writes and flushes still block the event-loop thread;
-slow output delays reads, signals and timers. The flush interval and transport
-deadlines are scheduling bounds, not hard real-time guarantees.
+Unknown keys are ignored but validated syntactically; malformed, missing-required
+or trailing input fails. Nesting is limited to 256 levels. Repeated valid keys
+use the last value; sections replace rather than merge. Invalid earlier values
+still fail. Checked integer conversion follows the spelling policy in the
+configuration reference.
 
-An SPSC queue and dedicated writer thread could isolate disk I/O, but would need
-a saturation policy, cross-thread error reporting and shutdown draining. Omitting
-them keeps ownership and error propagation on one thread. Batching reduces I/O
-frequency without providing that isolation; no latency or throughput claim is made.
+Ticker dispatch reads the type before decoding fields: an extra O(message-size)
+scan keeps filtering/error descriptions straightforward; domain conversion runs
+once. Malformed data and Coinbase errors are fatal; valid control/future messages
+are ignored.
 
-Immediate write and threshold-flush failures return `Result<void>`. Timer flush
-failures occur after `write_statistics()` returns, so they report asynchronously
-through `RunControlHandle`; the application owns fatal-error and shutdown policy.
-The sink has no feed dependency. Batching delays visibility and error detection;
-a failed flush can leave fewer rows than the emitted counter reports. Flush does
-not ensure disk durability, and crashes or SIGKILL can lose pending rows.
+## Statistics and memory
+
+Windows use each symbol's exchange time and the open lower boundary
+`(t-duration, t]`. Each received ticker contributes one equally weighted price;
+Coinbase can [batch cascading matches](https://docs.cdp.coinbase.com/exchange/websocket-feed/channels#ticker-channel),
+so this is neither a complete trade tape nor a volume-weighted average.
+
+Expiring K observations and inserting one costs O((K+1) log N); snapshots cost
+O(1). Retained duplicates do not mutate state; IDs may be reused after expiration.
+Decreasing timestamps fail; idle symbols produce no synthetic rows. Capacity is
+checked after prospective expiration, before mutation. The default 100,000-sample
+limit is an operational choice, not a measured rate budget.
+
+The assignment permits bounded-error approximation. Alternatives considered were
+**time buckets** (approximate expiration at the boundary), **price histograms**
+(quantization error plus range/expiration policy), and **quantile sketches or
+sampling** (rank/probabilistic guarantees, not universal price-error bounds).
+Expiration, duplicates and extrema complicate these alternatives. Exact windows
+keep one policy, accepting O(N) memory and failure at capacity. Allocation failure
+is fatal; recovery is not promised.
 
 ## Numeric model
 
-Prices use signed 64-bit integer ticks at a fixed scale of eight decimal places:
-`1 tick = 0.00000001`. The supported range is `0..92233720368.54775807`.
-Decimal and scientific-notation input is parsed directly into ticks without
-floating-point conversion. Values outside that range or off that grid fail;
-extra trailing zeros are accepted, but input prices are never silently rounded.
+Prices are nonnegative signed 64-bit ticks: `1 tick = 0.00000001`, with range
+`0..92233720368.54775807`. Matching-engine-style parsing splits decimal parts,
+uses `std::from_chars` and checks before combining. Decimal points require digits
+on both sides; insignificant trailing zeros are accepted, off-grid values rejected.
+Scientific notation is deliberately unsupported, although Coinbase's
+[types documentation](https://docs.cdp.coinbase.com/exchange/rest-api/types)
+does not explicitly prohibit it.
 
-The window maintains an exact 128-bit unsigned sum using Boost's fixed-width,
-allocation-free multiprecision integer. A maximum nonnegative 64-bit price
-multiplied by a sample count of at most 64 bits fits in 127 bits. Expiration
-subtracts exact ticks. Mean is retained as sum/count; even-count median as the two
-middle prices/2. These fractions reach the sink without premature rounding.
+Boost.DateTime handles calendar conversion and fractional seconds, configured
+for nanoseconds only inside `parse_fields.cpp`. Guards preserve the strict UTC
+layout, 1970..2200 range and up to nine fractional digits, preventing normalization
+and truncation. Library exceptions become typed errors. Temporary strings and
+exception translation are the cost of reusing Boost.
 
-CSV rounds mean and median to the nearest tick, with ties going to even. Their
-absolute error relative to the exact statistic is at most half a tick
-(`0.000000005`), independent of window size and stream history. Low, high and
-observed prices are exact. The bound applies to statistics of received ticker
-updates, not to omitted trades or sampling error.
+The allocation-free 128-bit sum is exact: supported price times count fits in
+127 bits. Mean stays sum/count; even-count median stays the middle prices/2.
+Only CSV rounds, using nearest, ties-to-even.
+**Mean and median have absolute output error at most half a tick (`0.000000005`);
+observed prices, low and high are exact.** This bound covers received updates,
+not omitted trades. Locale-independent decimals omit insignificant trailing zeros.
 
-Locale-independent output uses ordinary decimal notation with up to eight
-fractional digits, omitting insignificant trailing zeros. The independent Decimal
-verifier checks equality with the specified rounded result.
+One scale avoids product-metadata lookup and per-symbol settings. Products whose
+[`quote_increment`](https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-single-product)
+requires finer prices are unsupported; representability is not guaranteed for
+all current or future products.
 
-A common fixed scale avoids fetching product metadata or configuring per-symbol
-scales. Coinbase documents the price grid through
-[`quote_increment`](https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-single-product).
-The example symbols' increments were representable in the 2026-10-07 metadata
-check; this is not a permanent exchange-wide precision guarantee. Products
-requiring finer prices are unsupported. Exact fractions and wide integer division
-add formatting work in exchange for portable, exact stored prices and statistics.
-The observation limit bounds sample count separately from this numeric policy;
-it does not approximate the window.
+## Output, shutdown and scope
 
-## Explicit scope
+Output opens after subscription writing, preserving previous CSV on earlier
+failures; readiness does not wait for acknowledgement. Opening replaces the file
+and flushes its header. Rows flush at the threshold or interval from the first
+pending row; later rows do not postpone it. Shutdown flushes the remainder.
+Stream buffering may publish rows earlier; scheduling bounds are not hard real-time.
 
-Malformed ticker data, out-of-order timestamps and transport/output failures
-end the run. Unrelated valid messages and retained duplicates are filtered; a
-normal peer close succeeds. There are no reconnects, sequence recovery,
-heartbeats, stale-feed monitoring, worker threads, output queues, runtime reload
-or crash-durability machinery. This is not a production trading system.
+An SPSC queue/writer thread could isolate I/O, but needs saturation policy,
+cross-thread errors and draining. Batching keeps single-thread ownership instead.
+Emitted counts need not equal persisted rows after failure; crashes or SIGKILL
+can lose pending output.
 
-Logging is synchronous and best effort: UTC lifecycle records and the final
-summary go to stderr for both INFO and ERROR. Per-ticker logging is omitted
-because CSV already records accepted updates. Collection and rotation belong to
-the environment.
+TLS verifies chain and hostname using the environment's trust store. Deadlines
+cover DNS through subscription and close; there is no idle watchdog. Normal peer
+close succeeds; close failure returns an error. No unsubscribe is needed. Cleanup
+errors are logged without replacing the first failure. Emergency exception cleanup
+can abandon the close handshake.
 
-Logging and CSV share UTC formatting in `common/`; numeric CSV formatting stays
-in `output/`. A small common library keeps the formatter implementation out of
-consumer headers and avoids a logging dependency on the output module.
+Reconnects, sequence recovery, heartbeats, workers, queues, runtime reload and
+crash durability are outside scope. Logging records UTC lifecycle events and final
+counts, with INFO and ERROR both on stderr; per-ticker diagnostics are omitted.
+The submission makes no measured low-latency performance claim.
 
 ## Verification approach
 
-Tests exercise production entry points with table-driven inputs and independent
-references. Randomized windows are checked against a sorted reference; a
-JSON-lines fixture covers parsing, statistics and CSV together. Local TLS servers
-verify cancellation during setup, TLS trust, signal shutdown, first-failure
-preservation across close/CSV failures, and partial-batch visibility.
-Tests need loopback access but no external feed.
+Tests exercise production APIs, randomized windows against a sorted reference,
+fixtures and independent Decimal CSV checks. Local TLS tests cover trust,
+cancellation, shutdown deadlines, first-error preservation and batch visibility.
+They need loopback access, not an external feed.
 
-The [test report](../logs/test-results.log) records Release and UBSan runs.
-AddressSanitizer could not initialize on this host, including for an empty program;
-no ASan pass is claimed. The empty-program check was repeated on 2026-10-08
-inside and outside the sandbox with the same initialization failure.
-[Live diagnostics](../logs/live-run.log) and
-[independent live verification](../logs/live-verification.log) record continuous
-output and graceful shutdown. The short capture does not cover five-minute
-expiration; deterministic tests do. Linux CI defines GCC/Clang Release and Clang
-ASan/UBSan jobs, but runner results must be confirmed separately; no Linux runtime is available on this development host.
-
-See [Build setup](BUILDING.md) for sanitizer options and the README for commands.
-Generated CSVs and build/CI artifacts stay under ignored `build/`; `logs/` retains
-current execution evidence. The certificate and key in `data/` are public fixtures.
+[Release/UBSan results](../logs/test-results.log), [live diagnostics](../logs/live-run.log)
+and [independent live verification](../logs/live-verification.log) retain execution
+evidence. Deterministic tests cover expiration beyond the short live capture.
+ASan cannot initialize on this host; Linux CI runner results remain unconfirmed.
+Generated artifacts stay in ignored `build/`; `logs/` retains current evidence.
+See [Build setup](BUILDING.md).

@@ -102,8 +102,9 @@ TEST(TickerParser, RejectsMalformedTickerMessages) {
                                    {"trade_id", "1.8446744073709552e19", ErrorCode::InvalidInput},
                                    {"price", R"("-1")", ErrorCode::InvalidInput},
                                    {"price", R"("NaN")", ErrorCode::InvalidInput},
-                                   {"price", R"("1e99999")", ErrorCode::OutOfRange},
-                                   {"price", R"("1e-99999")", ErrorCode::OutOfRange},
+                                   {"price", R"("1e99999")", ErrorCode::InvalidInput},
+                                   {"price", R"("1e-99999")", ErrorCode::InvalidInput},
+                                   {"price", R"("92233720368.54775808")", ErrorCode::OutOfRange},
                                    {"price", R"("1.000000001")", ErrorCode::OutOfRange},
                                    {"time", R"("2026-02-30T10:00:00Z")", ErrorCode::InvalidInput}};
     for (const auto &[field, json, error] : cases) {

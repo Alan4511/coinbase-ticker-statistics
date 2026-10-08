@@ -42,8 +42,8 @@ struct TestApplication {
 
 static_assert(OutputSink<RecordingSink>);
 static_assert(OutputSink<CountingSink>);
-static_assert(FeedHandler<ApplicationFeedHandler<RecordingSink, TestApplication>>);
-static_assert(FeedHandler<ApplicationFeedHandler<CountingSink, TestApplication>>);
+static_assert(TickerEventHandler<ApplicationFeedHandler<RecordingSink, TestApplication>>);
+static_assert(TickerEventHandler<ApplicationFeedHandler<CountingSink, TestApplication>>);
 
 TickerUpdate update(TradeId id, std::int64_t units, Symbol symbol = "BTC-USD", Timestamp time = Timestamp{}) {
     return {time, std::move(symbol), id, Price{units * Price::ticks_per_unit}};

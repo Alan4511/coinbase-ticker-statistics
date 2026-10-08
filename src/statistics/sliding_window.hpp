@@ -50,10 +50,21 @@ class SlidingWindow {
         Price price;
     };
 
+    struct PendingUpdate {
+        SampleCount expired_sample_count;
+        PriceSum sum_after_update;
+    };
+
+    // Prepare and validate before changing the retained window.
     [[nodiscard]] bool is_expired(Timestamp observation_time, Timestamp window_time) const;
+    [[nodiscard]] Result<PendingUpdate> prepare_update(const TickerUpdate &ticker_update) const;
+
+    // Apply expiration/insertion while preserving the median partition invariants.
     void remove_oldest_sample();
+    void insert_update(const TickerUpdate &ticker_update);
     void rebalance_price_partitions();
 
+    // Retained observations, their indexes, and the exact aggregate belong to this window.
     std::chrono::nanoseconds duration_;
     SampleCount max_observations_;
     std::optional<Timestamp> last_accepted_time_;
@@ -61,13 +72,6 @@ class SlidingWindow {
     std::unordered_map<TradeId, Timestamp> retained_trade_times_;
     std::multiset<Price> lower_prices_;
     std::multiset<Price> upper_prices_;
-    struct PendingUpdate {
-        SampleCount expired_sample_count;
-        PriceSum sum_after_update;
-    };
-    [[nodiscard]] Result<PendingUpdate> prepare_update(const TickerUpdate &ticker_update) const;
-    void insert_update(const TickerUpdate &ticker_update);
-
     PriceSum sum_{};
 };
 

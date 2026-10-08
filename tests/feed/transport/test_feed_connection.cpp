@@ -54,8 +54,8 @@ class ConnectionRun final {
     unsigned stopped{};
 };
 
-static_assert(FeedConnectionHandler<ConnectionRun>);
-static_assert(!FeedConnectionHandler<int>);
+static_assert(Feed<ConnectionRun>);
+static_assert(!Feed<int>);
 static_assert(!std::is_polymorphic_v<ConnectionRun>);
 
 struct WrongMessageHandler {
@@ -63,7 +63,7 @@ struct WrongMessageHandler {
     Result<void> on_message(const TickerUpdate &);
     void on_stopped(Result<void>);
 };
-static_assert(!FeedConnectionHandler<WrongMessageHandler>);
+static_assert(!Feed<WrongMessageHandler>);
 
 TEST(FeedConnection, DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls) {
     test::TestTrustStore trust;

@@ -9,7 +9,6 @@
 #include <csignal>
 #include <exception>
 #include <memory>
-#include <new>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -94,7 +93,7 @@ class Application {
                 control_handle_.fail(std::move(started.error()));
             io_.run();
         } catch (const std::exception &error) {
-            abort_run(error.what());
+            abort_run(error);
         }
         return report_run_result(logger_,
                                  feed_->counts(),

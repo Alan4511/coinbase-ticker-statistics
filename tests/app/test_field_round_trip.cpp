@@ -25,12 +25,13 @@ TEST(Price, ParsesAndRoundTripsExactDecimalTicks) {
                        {"0.00000001", 1, "0.00000001"},
                        {"0.100000000000", 10'000'000, "0.1"},
                        {"0000123.450000", 12'345'000'000, "123.45"},
-                       {"1e3", 100'000'000'000, "1000"},
-                       {"1.2345e+2", 12'345'000'000, "123.45"},
-                       {"1234500000000e-10", 12'345'000'000, "123.45"},
-                       {"100e-10", 1, "0.00000001"},
-                       {"0e99999999999999999999", 0, "0"},
+                       {"1000", 100'000'000'000, "1000"},
+                       {"0.000000010000", 1, "0.00000001"},
+                       {"00000000000000000000000000000000000001", 100'000'000, "1"},
+                       {"0.000000000000", 0, "0"},
                        {"0", 0, "0"},
+                       {"92233720368", 9'223'372'036'800'000'000, "92233720368"},
+                       {"92233720368.54775807000", std::numeric_limits<std::int64_t>::max(), "92233720368.54775807"},
                        {"92233720368.54775807", std::numeric_limits<std::int64_t>::max(), "92233720368.54775807"}};
     for (const auto &[text, ticks, canonical] : cases) {
         SCOPED_TRACE(text);
@@ -48,8 +49,8 @@ TEST(Price, ParsesAndRoundTripsExactDecimalTicks) {
         const auto fraction = std::to_string(Price::ticks_per_unit + expected.ticks % Price::ticks_per_unit).substr(1);
         const auto text = whole + '.' + fraction;
         SCOPED_TRACE(text);
-        EXPECT_EQ(parse_price(text + "000e+0"), expected);
-        EXPECT_EQ(parse_price(std::to_string(expected.ticks) + "e-8"), expected);
+        EXPECT_EQ(parse_price(text), expected);
+        EXPECT_EQ(parse_price(text + "000"), expected);
         ASSERT_RESULT_VALUE(formatted, format_price(expected));
         auto canonical = text;
         while (canonical.back() == '0')
@@ -58,16 +59,42 @@ TEST(Price, ParsesAndRoundTripsExactDecimalTicks) {
             canonical.pop_back();
         EXPECT_EQ(formatted, canonical);
     }
-    for (const auto text : {"", "-1", "+1", ".5", "1.", " 1", "1 ", "NaN", "Inf", "1.2.3", "1e", "1e+",
-                           "0e999999x", "0.000000000x"}) {
+    for (const auto text : {"",
+                            "-1",
+                            "+1",
+                            ".5",
+                            "1.",
+                            " 1",
+                            "1 ",
+                            "NaN",
+                            "Inf",
+                            "1.2.3",
+                            "1e",
+                            "1e+",
+                            "1e3",
+                            "1.2345e+2",
+                            "100e-10",
+                            "0e99999999999999999999",
+                            "1e99999",
+                            "1e-99999",
+                            "1e99999999999999999999",
+                            "0e999999x",
+                            "0.000000000x",
+                            "1.000000000x"}) {
         SCOPED_TRACE(text);
         ASSERT_RESULT_ERROR(parse_price(text), ErrorCode::InvalidInput);
     }
-    for (const auto text : {"1e99999", "1e-99999", "1e99999999999999999999", "0.000000001", "1.000000001",
-                           "92233720368.54775808", "92233720369", "999999999999999999999"}) {
+    for (const auto text : {"0.000000001",
+                            "1.000000001",
+                            "0.000000010001",
+                            "0.12345678901234567890123456789",
+                            "92233720368.54775808",
+                            "92233720369",
+                            "999999999999999999999"}) {
         SCOPED_TRACE(text);
         ASSERT_RESULT_ERROR(parse_price(text), ErrorCode::OutOfRange);
     }
+    ASSERT_RESULT_ERROR(parse_price(std::string_view{"1.25\0junk", 9}), ErrorCode::InvalidInput);
     ASSERT_RESULT_ERROR(format_price(Price{-1}), ErrorCode::InvalidInput);
 }
 

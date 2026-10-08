@@ -6,7 +6,7 @@
 #include <string_view>
 
 namespace coinbase_ticker_statistics {
-/** Parse an exact nonnegative decimal/scientific price on the eight-decimal tick grid. */
+/** Parse an exact nonnegative plain decimal price on the eight-decimal tick grid. */
 [[nodiscard]] Result<Price> parse_price(std::string_view text);
 
 /**

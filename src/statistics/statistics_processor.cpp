@@ -28,7 +28,8 @@ Result<std::optional<StatisticsUpdate>> StatisticsProcessor::on_update(const Tic
     const auto window_position = windows_.find(ticker_update.symbol);
     if (window_position == windows_.end())
         return std::nullopt;
-    auto updated_statistics = window_position->second.add_update(ticker_update);
+    auto &[symbol, window] = *window_position;
+    auto updated_statistics = window.add_update(ticker_update);
     if (!updated_statistics.has_value())
         return std::unexpected(std::move(updated_statistics.error()));
     if (!updated_statistics.value().has_value())

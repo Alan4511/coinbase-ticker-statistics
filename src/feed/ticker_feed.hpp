@@ -23,23 +23,24 @@ struct FeedCounts {
     std::size_t ticker_updates{};
 };
 
-/** Own ticker protocol processing and one connection; borrow the typed consumer. */
-template <typename Handler>
+/** Own the connection and receive its raw-message/lifecycle events.
+ * Decode ticker messages and deliver typed updates to the borrowed ticker handler.
+ */
+template <TickerEventHandler TickerHandler>
 class TickerFeed {
   public:
-    /** The event loop, borrowed handler and run-control handle must outlive all pending operations. */
+    /** The event loop, borrowed ticker handler and run-control handle must outlive all pending operations. */
     [[nodiscard]] static Result<std::unique_ptr<TickerFeed>> create(boost::asio::io_context &io,
                                                                     FeedConfig config,
                                                                     const Symbols &symbols,
-                                                                    Handler &handler,
-                                                                    RunControlHandle &control_handle)
-        requires FeedHandler<Handler>
-    {
+                                                                    TickerHandler &ticker_handler,
+                                                                    RunControlHandle &control_handle) {
         auto subscription = encode_ticker_subscription(symbols);
         if (!subscription.has_value())
             return std::unexpected(std::move(subscription.error()));
         // The connection borrows this object's stable address.
-        auto feed = std::unique_ptr<TickerFeed>(new TickerFeed(handler, control_handle));
+        auto feed = std::unique_ptr<TickerFeed>(new TickerFeed(ticker_handler, control_handle));
+        // This adapter receives connection events; create() checks that it satisfies the Feed concept.
         auto connection = FeedConnection::create(io, std::move(config), std::move(subscription.value()), *feed);
         if (!connection.has_value())
             return std::unexpected(std::move(connection.error()));
@@ -65,7 +66,7 @@ class TickerFeed {
 
     // Raw transport callbacks: only the connection invokes these during a normal run.
     [[nodiscard]] Result<void> on_connected() {
-        return report_completion(handler_.on_connected());
+        return report_completion(ticker_handler_.on_connected());
     }
 
     [[nodiscard]] Result<void> on_message(std::string_view message) {
@@ -76,11 +77,11 @@ class TickerFeed {
         if (!parsed_update.value().has_value())
             return {};
         ++counts_.ticker_updates;
-        return report_completion(handler_.on_message(parsed_update.value().value()));
+        return report_completion(ticker_handler_.on_message(parsed_update.value().value()));
     }
 
     void on_stopped(Result<void> completion) {
-        handler_.on_stopped(std::move(completion));
+        ticker_handler_.on_stopped(std::move(completion));
     }
 
   private:
@@ -92,11 +93,11 @@ class TickerFeed {
         return completion;
     }
 
-    TickerFeed(Handler &handler, RunControlHandle &control_handle)
-        : handler_(handler), control_handle_(control_handle) {
+    TickerFeed(TickerHandler &ticker_handler, RunControlHandle &control_handle)
+        : ticker_handler_(ticker_handler), control_handle_(control_handle) {
     }
 
-    Handler &handler_;
+    TickerHandler &ticker_handler_;
     RunControlHandle &control_handle_;
     FeedCounts counts_;
     // Declared last so the connection is destroyed before the protocol state it borrows.

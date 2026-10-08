@@ -22,9 +22,9 @@ using Tcp = net::ip::tcp;
 
 class FeedConnection::Session {
   public:
-    Session(net::io_context &io, FeedConfig config, std::string subscription, Events events)
-        : config_(std::move(config)), subscription_(std::move(subscription)), events_(std::move(events)), resolver_(io),
-          socket_(io, tls_), deadline_(io) {
+    Session(net::io_context &io, FeedConfig config, std::string subscription, ConnectionCallbacks callbacks)
+        : config_(std::move(config)), subscription_(std::move(subscription)), callbacks_(std::move(callbacks)),
+          resolver_(io), socket_(io, tls_), deadline_(io) {
     }
 
     Result<void> configure() {
@@ -121,7 +121,7 @@ class FeedConnection::Session {
                     return;
                 static_cast<void>(deadline_.cancel());
                 state_ = State::Reading;
-                auto ready = events_.on_connected();
+                auto ready = callbacks_.on_connected();
                 if (!ready.has_value())
                     begin_close(std::move(ready));
                 else if (state_ == State::Reading)
@@ -148,7 +148,7 @@ class FeedConnection::Session {
             }
             const auto bytes = buffer_.data();
             const std::string_view message(static_cast<const char *>(bytes.data()), bytes.size());
-            auto delivered = events_.on_message(message);
+            auto delivered = callbacks_.on_message(message);
             buffer_.consume(buffer_.size());
             if (!delivered.has_value())
                 begin_close(std::move(delivered));
@@ -198,12 +198,12 @@ class FeedConnection::Session {
         static_cast<void>(deadline_.cancel());
         beast::error_code ignored;
         beast::get_lowest_layer(socket_).close(ignored);
-        events_.on_stopped(result_);
+        callbacks_.on_stopped(result_);
     }
 
     FeedConfig config_;
     std::string subscription_;
-    Events events_;
+    ConnectionCallbacks callbacks_;
     ssl::context tls_{ssl::context::tls_client};
     Tcp::resolver resolver_;
     websocket::stream<beast::ssl_stream<Tcp::socket>> socket_;
@@ -213,12 +213,14 @@ class FeedConnection::Session {
     Result<void> result_;
 };
 
-Result<std::unique_ptr<FeedConnection>>
-FeedConnection::create_session(net::io_context &io, FeedConfig config, std::string subscription, Events events) {
+Result<std::unique_ptr<FeedConnection>> FeedConnection::create_session(net::io_context &io,
+                                                                       FeedConfig config,
+                                                                       std::string subscription,
+                                                                       ConnectionCallbacks callbacks) {
     if (auto valid = validate(config); !valid.has_value())
         return std::unexpected(std::move(valid.error()));
     try {
-        auto session = std::make_unique<Session>(io, std::move(config), std::move(subscription), std::move(events));
+        auto session = std::make_unique<Session>(io, std::move(config), std::move(subscription), std::move(callbacks));
         if (auto configured = session->configure(); !configured.has_value())
             return std::unexpected(std::move(configured.error()));
         // make_unique cannot call the private constructor; ownership is immediate.

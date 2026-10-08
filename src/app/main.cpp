@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
-#include <new>
 #include <string_view>
 
 namespace {

@@ -23,7 +23,8 @@ Result<void> validate_config(const Config &config) {
         return valid;
     std::set<Symbol> subscribed_symbols;
     for (const auto &symbol : config.symbols) {
-        if (!subscribed_symbols.insert(symbol).second)
+        const auto [symbol_position, is_new_symbol] = subscribed_symbols.insert(symbol);
+        if (!is_new_symbol)
             return fail(ErrorCode::InvalidConfiguration, "symbols must be unique");
     }
     return validate(config.feed)
