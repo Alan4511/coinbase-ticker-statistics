@@ -1,9 +1,10 @@
 Coinbase Ticker Statistics — verification
-Report generated: 2026-10-08T15:37:55+05:30 (Asia/Calcutta)
+Report generated: 2026-10-08T16:22:05+05:30 (Asia/Calcutta)
+
+Local macOS verification
 Platform: macOS arm64; AppleClang 16.0.0; C++23
+Source: submission files, including timestamp appending and formatting updates.
 Results: 49/49 tests passed in Release and Debug/UBSan.
-Regression coverage: consistent Boost timestamp precision, strict canonical UTC syntax,
-NUL path/endpoint rejection, peer error-close codes and bounded peer TLS shutdown.
 Workspace prefixes are omitted from captured output below.
 
 Release
@@ -32,13 +33,13 @@ Test project build/submission-release
       Start 11: TickerParser.SurfacesExchangeErrors
 11/49 Test #11: TickerParser.SurfacesExchangeErrors .........................................   Passed    0.01 sec
       Start 12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls
-12/49 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.02 sec
+12/49 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.01 sec
       Start 13: FeedConnection.RejectsTransportOrProtocolViolations
-13/49 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.01 sec
+13/49 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.02 sec
       Start 14: FeedConnection.BoundsConnectionAndShutdown
 14/49 Test #14: FeedConnection.BoundsConnectionAndShutdown ..................................   Passed    2.02 sec
       Start 15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown
-15/49 Test #15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown ................   Passed    1.03 sec
+15/49 Test #15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown ................   Passed    1.02 sec
       Start 16: TickerFeed.DecodesFiltersAndCountsTypedUpdates
 16/49 Test #16: TickerFeed.DecodesFiltersAndCountsTypedUpdates ..............................   Passed    0.03 sec
       Start 17: TickerFeed.PropagatesParserAndConsumerFailures
@@ -50,9 +51,9 @@ Test project build/submission-release
       Start 20: CsvWriter.ReportsStreamFailures
 20/49 Test #20: CsvWriter.ReportsStreamFailures .............................................   Passed    0.01 sec
       Start 21: NumericFormatting.RoundsExactStatisticsToNearestEvenTick
-21/49 Test #21: NumericFormatting.RoundsExactStatisticsToNearestEvenTick ....................   Passed    0.01 sec
+21/49 Test #21: NumericFormatting.RoundsExactStatisticsToNearestEvenTick ....................   Passed    0.03 sec
       Start 22: CsvSink.FlushesByThresholdOrDeadline
-22/49 Test #22: CsvSink.FlushesByThresholdOrDeadline ........................................   Passed    0.26 sec
+22/49 Test #22: CsvSink.FlushesByThresholdOrDeadline ........................................   Passed    0.27 sec
       Start 23: CsvSink.CloseFlushesAndCancelsPendingWork
 23/49 Test #23: CsvSink.CloseFlushesAndCancelsPendingWork ...................................   Passed    0.02 sec
       Start 24: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle
@@ -84,9 +85,9 @@ Test project build/submission-release
       Start 37: Application.ProcessingFailureSurvivesCloseDeadline
 37/49 Test #37: Application.ProcessingFailureSurvivesCloseDeadline ..........................   Passed    1.01 sec
       Start 38: Application.CapacityFailureStopsAndFlushesAcceptedRows
-38/49 Test #38: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.02 sec
+38/49 Test #38: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.01 sec
       Start 39: Application.SignalShutdownIsGraceful
-39/49 Test #39: Application.SignalShutdownIsGraceful ........................................   Passed    0.09 sec
+39/49 Test #39: Application.SignalShutdownIsGraceful ........................................   Passed    0.07 sec
       Start 40: Application.TimedOutputFailureStopsIdleFeed
 40/49 Test #40: Application.TimedOutputFailureStopsIdleFeed .................................   Passed    0.04 sec
       Start 41: Application.SignalDuringConnectionSetupPreservesExistingOutput
@@ -94,15 +95,15 @@ Test project build/submission-release
       Start 42: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure
 42/49 Test #42: Application.CleanupFailureIsLoggedWithoutReplacingProcessingFailure .........   Passed    0.02 sec
       Start 43: Application.CloseDeadlineBoundsUnresponsivePeer
-43/49 Test #43: Application.CloseDeadlineBoundsUnresponsivePeer .............................   Passed    1.05 sec
+43/49 Test #43: Application.CloseDeadlineBoundsUnresponsivePeer .............................   Passed    1.04 sec
       Start 44: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink
-44/49 Test #44: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink ......................   Passed    0.02 sec
+44/49 Test #44: ApplicationFeedHandler.RoutesStatisticsToAnyOutputSink ......................   Passed    0.01 sec
       Start 45: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures
 45/49 Test #45: ApplicationFeedHandler.PropagatesProcessingAndSinkFailures ..................   Passed    0.01 sec
       Start 46: Price.ParsesAndRoundTripsExactDecimalTicks
 46/49 Test #46: Price.ParsesAndRoundTripsExactDecimalTicks ..................................   Passed    0.01 sec
       Start 47: Timestamp.ParsesFormatsAndValidatesUtc
-47/49 Test #47: Timestamp.ParsesFormatsAndValidatesUtc ......................................   Passed    0.02 sec
+47/49 Test #47: Timestamp.ParsesFormatsAndValidatesUtc ......................................   Passed    0.01 sec
       Start 48: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures
 48/49 Test #48: RunControl.PreservesFirstFailureAcrossReentrantAndCleanupFailures ...........   Passed    0.01 sec
       Start 49: RunControl.StopAndCompletionAreIdempotent
@@ -110,13 +111,13 @@ Test project build/submission-release
 
 100% tests passed out of 49
 
-Total Test time (real) =   6.04 sec
+Total Test time (real) =   5.99 sec
 
 UBSan
-Command: UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ctest --test-dir build/submission-ubsan --output-on-failure
+Command: ctest --test-dir build/submission-ubsan --output-on-failure
 Test project build/submission-ubsan
       Start  1: SlidingWindow.ValidatesDurationOnDirectConstruction
- 1/49 Test  #1: SlidingWindow.ValidatesDurationOnDirectConstruction .........................   Passed    0.04 sec
+ 1/49 Test  #1: SlidingWindow.ValidatesDurationOnDirectConstruction .........................   Passed    0.05 sec
       Start  2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary
  2/49 Test  #2: SlidingWindow.ComputesStatisticsAndExpiresAtWindowBoundary ..................   Passed    0.04 sec
       Start  3: SlidingWindow.HandlesDuplicateTradeIds
@@ -128,7 +129,7 @@ Test project build/submission-ubsan
       Start  6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration
  6/49 Test  #6: SlidingWindow.KeepsExactSumsAndFractionalStatisticsAcrossExpiration .........   Passed    0.04 sec
       Start  7: SlidingWindow.RandomizedUpdatesMatchIndependentReference
- 7/49 Test  #7: SlidingWindow.RandomizedUpdatesMatchIndependentReference ....................   Passed    0.75 sec
+ 7/49 Test  #7: SlidingWindow.RandomizedUpdatesMatchIndependentReference ....................   Passed    0.76 sec
       Start  8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors
  8/49 Test  #8: StatisticsProcessor.RoutesSymbolsAndDistinguishesFilteredEventsFromErrors ...   Passed    0.04 sec
       Start  9: TickerParser.DecodesTickerAndFiltersControlMessages
@@ -138,17 +139,17 @@ Test project build/submission-ubsan
       Start 11: TickerParser.SurfacesExchangeErrors
 11/49 Test #11: TickerParser.SurfacesExchangeErrors .........................................   Passed    0.04 sec
       Start 12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls
-12/49 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.05 sec
+12/49 Test #12: FeedConnection.DeliversOpaqueSubscriptionAndMessagesOverVerifiedTls .........   Passed    0.06 sec
       Start 13: FeedConnection.RejectsTransportOrProtocolViolations
-13/49 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.05 sec
+13/49 Test #13: FeedConnection.RejectsTransportOrProtocolViolations .........................   Passed    0.06 sec
       Start 14: FeedConnection.BoundsConnectionAndShutdown
 14/49 Test #14: FeedConnection.BoundsConnectionAndShutdown ..................................   Passed    2.07 sec
       Start 15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown
 15/49 Test #15: FeedConnection.ReportsPeerErrorCloseAndBoundsPeerTlsShutdown ................   Passed    1.08 sec
       Start 16: TickerFeed.DecodesFiltersAndCountsTypedUpdates
-16/49 Test #16: TickerFeed.DecodesFiltersAndCountsTypedUpdates ..............................   Passed    0.08 sec
+16/49 Test #16: TickerFeed.DecodesFiltersAndCountsTypedUpdates ..............................   Passed    0.06 sec
       Start 17: TickerFeed.PropagatesParserAndConsumerFailures
-17/49 Test #17: TickerFeed.PropagatesParserAndConsumerFailures ..............................   Passed    0.05 sec
+17/49 Test #17: TickerFeed.PropagatesParserAndConsumerFailures ..............................   Passed    0.06 sec
       Start 18: Subscription.BuildsAndValidatesMultiSymbolSubscription
 18/49 Test #18: Subscription.BuildsAndValidatesMultiSymbolSubscription ......................   Passed    0.04 sec
       Start 19: CsvWriter.WritesEscapedRoundTrippableRows
@@ -164,7 +165,7 @@ Test project build/submission-ubsan
       Start 24: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle
 24/49 Test #24: CsvSink.ReportsTimedFlushFailureThroughRunControlHandle .....................   Passed    0.07 sec
       Start 25: Config.ParsesRequiredDefaultsAndOverrides
-25/49 Test #25: Config.ParsesRequiredDefaultsAndOverrides ...................................   Passed    0.04 sec
+25/49 Test #25: Config.ParsesRequiredDefaultsAndOverrides ...................................   Passed    0.08 sec
       Start 26: Config.PreservesUnknownAndDuplicateKeyPolicies
 26/49 Test #26: Config.PreservesUnknownAndDuplicateKeyPolicies ..............................   Passed    0.04 sec
       Start 27: Config.RejectsInvalidConfiguration
@@ -190,7 +191,7 @@ Test project build/submission-ubsan
       Start 37: Application.ProcessingFailureSurvivesCloseDeadline
 37/49 Test #37: Application.ProcessingFailureSurvivesCloseDeadline ..........................   Passed    1.06 sec
       Start 38: Application.CapacityFailureStopsAndFlushesAcceptedRows
-38/49 Test #38: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.07 sec
+38/49 Test #38: Application.CapacityFailureStopsAndFlushesAcceptedRows ......................   Passed    0.08 sec
       Start 39: Application.SignalShutdownIsGraceful
 39/49 Test #39: Application.SignalShutdownIsGraceful ........................................   Passed    0.12 sec
       Start 40: Application.TimedOutputFailureStopsIdleFeed
@@ -216,7 +217,7 @@ Test project build/submission-ubsan
 
 100% tests passed out of 49
 
-Total Test time (real) =   8.67 sec
+Total Test time (real) =   8.71 sec
 
 Independent Decimal fixture verification
 Command: python3 tools/verify_csv.py --config data/fixture_config.json --require-expiration
@@ -224,18 +225,14 @@ PASS ticker_expected.csv: 7 rows independently verified
   BTC-USD: observations=5 expired=4 observed_span_seconds=700
   ETH-USD: observations=2 expired=1 observed_span_seconds=360
 
-AddressSanitizer availability (2026-10-08)
-Command: clang++ -fsanitize=address /private/tmp/sparkland-asan-probe.cpp -o /private/tmp/sparkland-asan-probe
-Probe source: int main() { return 0; }
-The empty program exits with code 134 during ASan initialization, both inside and outside the sandbox:
-AddressSanitizer: CHECK failed: sanitizer_malloc_mac.inc:189 "((!asan_init_is_running)) != (0)" (0x0, 0x0)
-No local macOS ASan pass is claimed; Linux sanitizer results appear below.
+Local macOS ASan was unavailable due to a runtime initialization failure.
+Linux ASan/UBSan results are recorded separately below.
 
-Linux verification
-GitHub Actions run: https://github.com/Alan4511/coinbase-ticker-statistics/actions/runs/37763498024
-Commit: fd9a768e45ddc6251638ea7868f5b484c2b661af; Debian trixie, 2026-10-08.
-Clang Release and Clang ASan/UBSan: each passed 49/49 tests and independently
-verified all 7 CSV fixture rows.
-GCC Release: production compiled; test compilation stopped on an unbraced
-conditional GoogleTest assertion. The assertion braces and revised GCC warning
-policy require a subsequent CI run.
+Linux verification (separately verified CI snapshot)
+GitHub Actions run: https://github.com/Alan4511/coinbase-ticker-statistics/actions/runs/37765090371
+CI source SHA: aeb9e587d6e6b19748b2756f6ffb1c5d9e2773d4
+Environment: Debian trixie on GitHub-hosted Linux; 2026-10-08.
+This CI run predates the formatting and editorial updates; local results above
+cover the submission files.
+GCC Release, Clang Release and Clang ASan/UBSan: each passed 49/49 tests and
+independently verified all 7 CSV fixture rows.

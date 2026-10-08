@@ -21,7 +21,7 @@ SlidingWindow::SlidingWindow(WindowOptions options)
 Result<std::optional<Statistics>> SlidingWindow::add_update(const TickerUpdate &ticker_update) {
     const auto window_time = ticker_update.exchange_time;
     if (ticker_update.price.ticks < 0) {
-        return fail(ErrorCode::InvalidInput, "Price must be non-negative");
+        return fail(ErrorCode::InvalidInput, "Price must be nonnegative");
     }
     if (last_accepted_time_.has_value() && window_time < last_accepted_time_.value()) {
         return fail(ErrorCode::OutOfOrderTimestamp, "Window time precedes the last accepted ticker update");
@@ -94,7 +94,7 @@ Result<SlidingWindow::PendingUpdate> SlidingWindow::prepare_update(const TickerU
     }
     const SampleCount retained_sample_count = samples_.size() - expired_sample_count;
     if (retained_sample_count >= max_observations_)
-        return fail(ErrorCode::OutOfRange, "Window observation limit exceeded; no samples were dropped");
+        return fail(ErrorCode::OutOfRange, "Window observation limit exceeded; update rejected");
     // The maximum int64 price times the maximum 64-bit count fits in PriceSum.
     candidate_sum += static_cast<std::uint64_t>(ticker_update.price.ticks);
     return PendingUpdate{expired_sample_count, candidate_sum};

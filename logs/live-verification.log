@@ -1,5 +1,5 @@
 Public Coinbase ticker capture and independent verification
-Build: current default Debug build, AppleClang 16.0.0; C++23
+Build: Debug; AppleClang 16.0.0; C++23
 Command: ./build/bin/coinbase_ticker_statistics_app --config config/live_verification.json
 Symbols: BTC-USD, ETH-USD, SOL-USD; window: 300 seconds
 Numeric model: exact eight-decimal integer prices; mean/median round nearest, ties-to-even.

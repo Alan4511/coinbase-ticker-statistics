@@ -100,8 +100,8 @@ TEST(Price, ParsesAndRoundTripsExactDecimalTicks) {
 }
 
 TEST(Timestamp, ParsesFormatsAndValidatesUtc) {
-    // Exercise DateTime in the caller too: inconsistent build modes can select
-    // incompatible inline constructors at link time, despite isolated tests passing.
+    // Exercise DateTime in another translation unit to detect inconsistent
+    // inline constructor layouts across the build.
     const boost::posix_time::time_duration second{0, 0, 1};
     ASSERT_EQ(second.ticks(), 1'000'000'000);
     EXPECT_EQ(parse_utc_timestamp("1970-01-01T00:00:00Z"), Timestamp{});
@@ -125,6 +125,12 @@ TEST(Timestamp, ParsesFormatsAndValidatesUtc) {
                            std::chrono::minutes{59} + std::chrono::seconds{59} + std::chrono::milliseconds{123};
     EXPECT_EQ(format_utc_timestamp(timestamp), "2024-02-29T23:59:59.123000000Z");
     EXPECT_EQ(format_utc_timestamp(Timestamp{}), "1970-01-01T00:00:00.000000000Z");
+    std::string appended = "prefix,";
+    ASSERT_RESULT_OK(append_utc_timestamp(appended, timestamp));
+    EXPECT_EQ(appended, "prefix,2024-02-29T23:59:59.123000000Z");
+    ASSERT_RESULT_ERROR(append_utc_timestamp(appended, Timestamp{} - std::chrono::nanoseconds{1}),
+                        ErrorCode::OutOfRange);
+    EXPECT_EQ(appended, "prefix,2024-02-29T23:59:59.123000000Z");
     ASSERT_RESULT_VALUE(start, parse_utc_timestamp("1970-01-01T00:00:00Z"));
     ASSERT_RESULT_VALUE(end, parse_utc_timestamp("2200-12-31T23:59:59Z"));
     constexpr auto stride = std::chrono::hours{731};

@@ -77,8 +77,8 @@ struct meta<coinbase_ticker_statistics::FeedConfig> {
     }
 };
 
-// Coinbase encodes price as a JSON string. Decode it with Glaze, then reuse
-// the domain parser so precision and range rules have one owner.
+// Glaze's borrowed views retain JSON escapes; strings preserve escaped input.
+// Reuse the domain parser so precision and range rules have one owner.
 template <>
 struct from<JSON, coinbase_ticker_statistics::Price> {
     template <auto Options>

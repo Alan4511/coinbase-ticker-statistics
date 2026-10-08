@@ -12,7 +12,7 @@ namespace coinbase_ticker_statistics {
 
 /**
  * A synchronous CSV writer borrowing an output stream.
- * Publish the header immediately; the sink controls row flushing.
+ * The sink writes and flushes the header when opening output, then controls row flushing.
  */
 class CsvWriter final {
   public:
@@ -25,7 +25,7 @@ class CsvWriter final {
     CsvWriter(CsvWriter &&) = delete;
     CsvWriter &operator=(CsvWriter &&) = delete;
 
-    /** Write the CSV header; call once before delivering statistics updates. */
+    /** Write and flush the CSV header; call once before delivering statistics updates. */
     [[nodiscard]] Result<void> write_header();
 
     /** Format one complete row and fail immediately when writing fails. */

@@ -59,10 +59,8 @@ Result<void> CsvWriter::write_text(std::string_view text) {
 
 Result<void> CsvWriter::write_statistics(const StatisticsUpdate &update) {
     row_.clear(); // Retain storage between updates.
-    const auto timestamp = format_utc_timestamp(update.ticker_update.exchange_time);
-    if (!timestamp.has_value())
-        return std::unexpected(timestamp.error());
-    row_ += timestamp.value();
+    if (auto timestamp = append_utc_timestamp(row_, update.ticker_update.exchange_time); !timestamp.has_value())
+        return timestamp;
     row_ += ',';
     append_field(row_, update.ticker_update.symbol);
     const auto append_numeric_field = [this](const auto &value) -> Result<void> {

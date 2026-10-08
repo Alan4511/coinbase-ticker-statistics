@@ -7,9 +7,11 @@ limit of 100,000 retained observations per symbol. Prices use exact
 integer ticks; mean and median round to eight decimal places in CSV. No API key
 is required.
 
-One Asio event loop coordinates the feed, statistics and output. The application
-owns lifecycle; transport, ticker decoding and calculations have separate owners.
-A narrow output contract lets other sinks reuse the statistics and event routing.
+- **Simplicity:** one asynchronous event-loop thread; independently testable parsing/statistics and an output interface supporting alternative sinks.
+- **Speed:** typed JSON decoding without a DOM, O(log N) work per inserted/expired sample, O(1) snapshots and batched CSV flushing.
+- **Memory:** O(N) retained storage per symbol; expired samples leave all indexes, and a configurable cap fails explicitly.
+
+See [design tradeoffs](docs/DESIGN_DECISIONS.md) for allocation costs and window-capacity sizing.
 
 ## Build
 

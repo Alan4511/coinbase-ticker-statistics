@@ -24,10 +24,14 @@ Result<void> append_number(std::string &destination, Price value) {
 Result<void> append_number(std::string &destination, const Statistic &value) {
     if (value.denominator == 0)
         return fail(ErrorCode::InvalidInput, "Statistic denominator must be positive");
-    PriceSum ticks = value.numerator / value.denominator;
-    const PriceSum remainder = value.numerator % value.denominator;
-    const PriceSum complement = PriceSum{value.denominator} - remainder;
-    const bool round_up = remainder > complement || (remainder == complement && (ticks & 1) != 0);
+    PriceSum ticks = value.numerator;
+    bool round_up = false;
+    if (value.denominator != 1) {
+        ticks /= value.denominator;
+        const PriceSum remainder = value.numerator % value.denominator;
+        const PriceSum complement = PriceSum{value.denominator} - remainder;
+        round_up = remainder > complement || (remainder == complement && (ticks & 1) != 0);
+    }
     constexpr auto maximum = std::numeric_limits<std::int64_t>::max();
     if (ticks > maximum || (ticks == maximum && round_up))
         return fail(ErrorCode::OutOfRange, "Statistic exceeds the fixed-point price range");

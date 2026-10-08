@@ -9,10 +9,10 @@
   or AppleClang 16+.
 - OpenSSL 3 development files.
 
-CMake uses installed Boost 1.88+ or fetches pinned Boost 1.88.0, and fetches
-Glaze 9.0.0 headers, and GoogleTest 1.18.0 for tests. Glaze is consumed as a
-header-only dependency, so its upstream CMake minimum does not apply. The first
-configuration needs network access to fetch dependencies.
+CMake uses an installed Boost 1.88+ or fetches Boost 1.88.0. It also fetches
+Glaze 9.0.0 and, when tests are enabled, GoogleTest 1.18.0. Glaze is consumed as
+a header-only dependency, so its upstream CMake minimum does not apply. The
+first configuration needs network access to fetch dependencies.
 
 ## Platform setup
 

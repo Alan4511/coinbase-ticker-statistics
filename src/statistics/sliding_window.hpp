@@ -19,8 +19,7 @@ namespace coinbase_ticker_statistics {
  * Insertion/expiration costs O(log N) per sample; queries cost O(1).
  * Two ordered partitions use O(N) memory without accumulating stale heap entries.
  * Tree nodes are transferred during rebalancing, avoiding additional allocations.
- * The caller must discard this object if an allocation fails during an update:
- * recovering from memory exhaustion would complicate the normal processing path.
+ * Allocation failure can interrupt mutation; discard this window after such an exception.
  */
 class SlidingWindow {
   public:

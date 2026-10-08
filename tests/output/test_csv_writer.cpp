@@ -71,7 +71,9 @@ TEST(NumericFormatting, RoundsExactStatisticsToNearestEvenTick) {
     };
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
     const auto maximum_count = std::numeric_limits<SampleCount>::max();
-    const Case cases[]{{{1, 2}, "0"},
+    const Case cases[]{{{1, 1}, "0.00000001"},
+                       {{maximum, 1}, "92233720368.54775807"},
+                       {{1, 2}, "0"},
                        {{3, 2}, "0.00000002"},
                        {{5, 2}, "0.00000002"},
                        {{1, 3}, "0"},

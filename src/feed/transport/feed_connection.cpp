@@ -31,7 +31,8 @@ class FeedConnection::Session {
         tls_.set_default_verify_paths();
         socket_.next_layer().set_verify_mode(ssl::verify_peer);
         socket_.next_layer().set_verify_callback(ssl::host_name_verification(config_.host));
-        // Same OpenSSL control call as SSL_set_tlsext_host_name, without its C-style pointer cast.
+        // Use the SNI macro's underlying control call to avoid its C-style cast
+        // under strict compiler warnings.
         if (SSL_ctrl(socket_.next_layer().native_handle(),
                      SSL_CTRL_SET_TLSEXT_HOSTNAME,
                      TLSEXT_NAMETYPE_host_name,
@@ -47,7 +48,7 @@ class FeedConnection::Session {
             if (frame == websocket::frame_type::close && state_ == State::Reading)
                 arm_deadline(config_.close_timeout, "WebSocket close deadline exceeded");
         });
-        // Our timer spans DNS through subscription and both directions of shutdown.
+        // The timer spans DNS through subscription and both directions of shutdown.
         // Idle-feed monitoring and automatic pings remain outside scope.
         return {};
     }

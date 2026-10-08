@@ -18,7 +18,6 @@
 - Nonempty array of distinct product IDs; one public ticker connection, independent windows.
 - IDs allow uppercase ASCII letters, digits and separated hyphens; at least one hyphen, no leading/trailing or repeated hyphens.
 - No implicit subscription, authentication or connection grouping.
-- Older configurations: replace `connections` with root `symbols`.
 
 ## Feed
 
@@ -46,7 +45,7 @@
 - Membership: `(t-duration,t]`, using exchange time. Equal timestamps allowed; decreasing timestamps fail before duplicate checking.
 - Retained duplicate IDs are ignored after considering prospective expiration; no state/time change or row. Expired IDs may be reused; idle windows expire on the next accepted event.
 - Capacity is checked after prospective expiration and duplicate filtering. Overflow returns `OutOfRange` before mutation; no samples are dropped/approximated.
-- Limit bounds samples, not process memory/allocation latency; raise it for longer/busier windows.
+- Limit bounds samples, not process memory/allocation latency. At 3600 seconds, the default 100,000 samples corresponds to about 27.8 accepted updates/second at a steady rate; raise it for busier symbols or bursts.
 - Mean weights ticker updates equally, not by volume/time.
 - Eight-decimal price ticks: `0..92233720368.54775807`; finer nonzero digits rejected.
 - Exact mean/median round only in CSV, nearest ties-to-even. Fixed scale/error bound: [numeric model](DESIGN_DECISIONS.md#numeric-model).
@@ -65,7 +64,6 @@
 - Flush at count/interval, whichever comes first; later rows do not postpone the timer. Timer works while idle; shutdown flushes the remainder. Stream buffering may publish earlier.
 - Writes/flushes remain synchronous: slow I/O delays timers. Interval is a scheduling bound, not hard real-time; batching delays visibility/error detection.
 - Timer-flush failure stops the feed with failure exit status. Flush does not guarantee durability; abrupt termination can lose rows.
-- Alternative sinks implement `write_statistics()` and require application configuration/lifecycle wiring; no runtime registry/factory.
 
 ```csv
 time,symbol,trade_id,trade_price,count,mean,median,low,high

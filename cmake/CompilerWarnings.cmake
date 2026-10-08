@@ -22,8 +22,8 @@ function(coinbase_ticker_statistics_enable_warnings target)
             -Wswitch-enum
             -Werror
         >
-        # GCC's optional null-dereference heuristic reports false positives in
-        # optimized Boost/std headers and valid test code; retain it on Clang.
+        # GCC emits optimization-dependent null-dereference diagnostics in Boost
+        # and standard-library instantiations. Keep the diagnostic enabled for Clang.
         $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wnull-dereference>
         $<$<CXX_COMPILER_ID:GNU>:
             -Wlogical-op

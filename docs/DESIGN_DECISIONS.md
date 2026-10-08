@@ -51,12 +51,12 @@ flowchart LR
 
 | Library | Why chosen | Cost / alternative |
 | --- | --- | --- |
-| Boost.Asio / Beast + OpenSSL | Reuse DNS, TLS, WebSocket framing, timers and asynchronous I/O. | We still own subscription policy, deadlines and lifetimes. A blocking loop is smaller, but complicates responsive shutdown and idle flushing. |
-| Glaze | Direct typed decoding and native error contexts fit `Result`, without a DOM. | Module metadata/custom domain conversions, temporary strings and template build cost. A DOM library offers more flexible inspection but constructs unused fields. |
-| Boost.DateTime | Reuse ISO/calendar parsing within the existing Boost dependency; canonical UTC comparison replaces manual field checks. | Comparison adds formatting/temporary strings on the event-loop thread. Manual guards avoid that work but duplicate layout checks. Precision/range checks prevent truncation/overflow; performance impact is unmeasured. |
+| Boost.Asio / Beast + OpenSSL | Reuse DNS, TLS, WebSocket framing, timers and asynchronous I/O. | The implementation remains responsible for subscription policy, deadlines and callback lifetimes. A blocking loop is smaller, but complicates responsive shutdown and idle flushing. |
+| Glaze | Direct typed decoding and native error contexts fit `Result`, without a DOM. | Metadata/template build cost; price/time use strings to preserve JSON unescaping. Borrowed views retain escapes. A DOM library constructs unused fields. |
+| Boost.DateTime | Reuse ISO/calendar parsing within the existing Boost dependency; canonical UTC comparison replaces manual field checks. | Precision and range checks prevent truncation and overflow. Canonical validation adds formatting and temporary strings on the event-loop thread; manual guards avoid that work but duplicate layout checks. |
 | Boost.Multiprecision `uint128_t` | Fixed-width, allocation-free sums without compiler-specific integer extensions. | Wider arithmetic, especially division, costs more than native 64-bit operations; 64-bit sums cannot cover the supported price/count range. |
 
-- Selected warnings are fatal. The optional null-dereference check is enabled on Clang; GCC's optimization-sensitive reports in Boost/standard headers and valid test code are omitted. ASan/UBSan CI provides separate runtime checks.
+- Enabled compiler warnings are treated as errors. GCC's `-Wnull-dereference` is excluded because it produces optimization-dependent diagnostics in Boost/standard-library instantiations and test code. Clang retains the diagnostic; ASan/UBSan provides separate runtime checks.
 
 ## Ownership and extension points
 
@@ -75,7 +75,7 @@ flowchart LR
 - Unknown fields are ignored but syntactically validated; missing required fields and malformed/trailing content fail.
 - Repeated keys use the last value; sections replace rather than merge. Earlier syntax/type errors fail; domain validation checks the final settings.
 - Type dispatch adds one O(message-size) scan to keep filtering/error descriptions simple; domain conversion runs once.
-- Native parse diagnostics and domain errors become `Result` at the JSON boundary; library exceptions are translated at their call sites. This is not a guarantee of recovery from allocation failure.
+- Native parse diagnostics and domain errors become `Result` at the JSON boundary; library exceptions are translated at their call sites. Memory allocation failure is outside the recoverable parsing-error model.
 - Configurable limits and exact input policies: [Configuration](CONFIGURATION.md).
 
 ## Statistics and memory
@@ -83,8 +83,9 @@ flowchart LR
 - Window: `(t-duration, t]`, using per-symbol exchange time; no idle synthetic rows.
 - One equally weighted observation per ticker update. Coinbase [batches cascading matches](https://docs.cdp.coinbase.com/exchange/websocket-feed/channels#ticker-channel): this is neither a complete trade tape nor VWAP.
 - Expiring K samples plus insertion: O((K+1) log N); snapshot: O(1); storage: O(N).
+- Expiration removes samples from all indexes; no stale entries accumulate. Node-based containers cost memory, but rebalancing transfers nodes without allocation; no speculative capacity reservation.
 - Retained duplicates leave state unchanged; IDs can be reused after expiration. Decreasing timestamps fail.
-- Capacity is checked after prospective expiration, before mutation. Default 100,000 samples is not a measured rate budget; allocation-failure recovery is not promised.
+- Capacity is checked after prospective expiration, before mutation. For a one-hour window, 100,000 samples accommodates about 27.8 accepted updates/second at a steady rate; size for busier symbols/bursts. This bounds retained samples, not process bytes; allocation failure ends the run.
 - Exact windows were chosen for simplicity. Bounded-error alternatives introduce extra policies:
 
 | Alternative | Additional policy/error |
@@ -96,10 +97,11 @@ flowchart LR
 ## Numeric model
 
 - Signed 64-bit prices: `1 tick = 0.00000001`; range `0..92233720368.54775807`.
-- Matching-engine-style decimal parsing uses `std::from_chars` and checked integer assembly. Off-grid values fail; scientific notation is deliberately unsupported despite no explicit prohibition in Coinbase's [types documentation](https://docs.cdp.coinbase.com/exchange/rest-api/types).
+- Decimal prices use `std::from_chars` and checked integer arithmetic, preserving exact fixed-point values. Off-grid values fail. Price strings use plain decimal notation; scientific notation is unsupported.
 - Boost.DateTime parses timestamps; the shared UTC formatter detects normalization/noncanonical syntax. UTC, years 1970..2200 and ≤9 fractional digits remain required; insignificant fractional zeros are accepted.
 - Allocation-free 128-bit sums and mean/median fractions remain exact; supported price × count fits in 127 bits.
 - CSV rounds nearest, ties-to-even: **mean/median absolute error ≤ `0.000000005`; price, low and high are exact.** This covers received updates, not omitted trades.
+- Denominator-one statistics bypass division; other fractions share one rounding path. Timestamps append directly to the reusable CSV row, avoiding a separate result string/copy; timestamp parsing still performs its canonical-format check.
 - One scale avoids product lookup/per-symbol precision settings; finer [`quote_increment`](https://docs.cdp.coinbase.com/api-reference/exchange-api/rest-api/products/get-single-product) products are unsupported.
 
 ## Output, shutdown and scope
@@ -112,7 +114,7 @@ flowchart LR
 - TLS verifies chain/hostname using the environment trust store. Deadlines cover setup and local/peer close, including TLS teardown. Peer codes 1000, 1001 or no code succeed; other codes fail. No unsubscribe is needed.
 - Cleanup errors never replace the first failure; emergency exception cleanup may abandon the handshake.
 - Outside scope: reconnects, sequence recovery, heartbeats/watchdogs, workers/queues, reload and crash durability.
-- UTC lifecycle/final-count logs use stderr for INFO and ERROR; no per-ticker diagnostics or measured low-latency claim.
+- UTC lifecycle/final-count logs use stderr for INFO and ERROR; no per-ticker diagnostics.
 
 ## Verification approach
 
