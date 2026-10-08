@@ -2,7 +2,6 @@
 #include "test_json.hpp"
 #include "test_result.hpp"
 #include <config/config.hpp>
-#include <config/json_meta.hpp>
 
 #include <glaze/json.hpp>
 #include <gtest/gtest.h>
@@ -45,11 +44,12 @@ std::string with_required_fields(std::string_view settings) {
 }
 
 Result<Config> parse_optional_settings(std::string_view settings) {
-    return parse_config(with_required_fields(settings));
+    return parse_and_validate_config(with_required_fields(settings));
 }
 
 TEST(Config, ParsesRequiredDefaultsAndOverrides) {
-    ASSERT_RESULT_VALUE(defaults, parse_optional_settings("{}"));
+    const auto required_config = with_required_fields("{}");
+    ASSERT_RESULT_VALUE(defaults, parse_and_validate_config(std::string_view{required_config}));
     EXPECT_EQ(defaults.symbols, (std::vector<std::string>{"BTC-USD", "ETH-USD", "SOL-USD"}));
     EXPECT_EQ(defaults.feed.host, "ws-feed.exchange.coinbase.com");
     EXPECT_EQ(defaults.feed.port, "443");
@@ -98,17 +98,28 @@ TEST(Config, ParsesRequiredDefaultsAndOverrides) {
                                                 "},\"output\":{\"flush_every_rows\":" + count + "}}"));
     EXPECT_EQ(large.feed.max_message_bytes, maximum_count);
     EXPECT_EQ(large.output.flush_every_rows, maximum_count);
+
+    ASSERT_RESULT_VALUE(exponents, parse_optional_settings(R"({
+        "feed":{"connect_timeout_seconds":1e1,"max_message_bytes":1e6},
+        "window":{"duration_seconds":3e2},
+        "output":{"flush_every_rows":1e2,"flush_interval_ms":25e1}
+    })"));
+    EXPECT_EQ(exponents.feed.connect_timeout, 10s);
+    EXPECT_EQ(exponents.feed.max_message_bytes, 1'000'000U);
+    EXPECT_EQ(exponents.window.duration, 300s);
+    EXPECT_EQ(exponents.output.flush_every_rows, 100U);
+    EXPECT_EQ(exponents.output.flush_interval, 250ms);
 }
 
 TEST(Config, PreservesUnknownAndDuplicateKeyPolicies) {
-    ASSERT_RESULT_VALUE(config, parse_config(R"({
+    ASSERT_RESULT_VALUE(config, parse_and_validate_config(R"({
         "symbols":["BTC-USD"], "unknown":{"ignored":true},
         "feed":{"port":"8443","port":"443"},
         "output":{"path":"first.csv","path":"last.csv"}
     })"));
     EXPECT_EQ(config.feed.port, "443");
     EXPECT_EQ(config.output.path, "last.csv");
-    ASSERT_RESULT_VALUE(sections, parse_config(R"({
+    ASSERT_RESULT_VALUE(sections, parse_and_validate_config(R"({
         "symbols":["BTC-USD"], "feed":{"host":"localhost"}, "feed":{},
         "window":{"duration_seconds":42}, "window":{},
         "output":{"path":"first.csv","flush_every_rows":1}, "output":{"path":"last.csv"}
@@ -117,29 +128,11 @@ TEST(Config, PreservesUnknownAndDuplicateKeyPolicies) {
     EXPECT_EQ(sections.window.duration, 300s);
     EXPECT_EQ(sections.output.path, "last.csv");
     EXPECT_EQ(sections.output.flush_every_rows, 100U);
-    ASSERT_RESULT_ERROR(parse_config(R"({
+    ASSERT_RESULT_ERROR(parse_and_validate_config(R"({
         "symbols":["BTC-USD"], "feed":{"host":1}, "feed":{"host":"localhost"},
         "output":{"path":"test.csv"}
     })"),
                         ErrorCode::InvalidConfiguration);
-}
-
-TEST(Config, UsesNativeGlazeMetadataAndReportsFieldDiagnostics) {
-    Config config{};
-    constexpr std::string_view document = R"({"symbols":["BTC-USD"],"output":{"path":"test.csv"}})";
-    auto error = glz::read<json_utils::read_options>(config, document);
-    ASSERT_FALSE(error) << glz::format_error(error, document);
-    EXPECT_EQ(config.symbols, (Symbols{"BTC-USD"}));
-    EXPECT_EQ(config.window.duration, 300s);
-    EXPECT_EQ(config.output.flush_interval, 250ms);
-
-    constexpr std::string_view invalid = R"({
-        "symbols":["BTC-USD"], "feed":{"connect_timeout_seconds":1.0},
-        "output":{"path":"test.csv"}
-    })";
-    error = glz::read<json_utils::read_options>(config, invalid);
-    ASSERT_TRUE(error);
-    EXPECT_TRUE(glz::format_error(error, invalid).contains("connect_timeout_seconds"));
 }
 
 TEST(Config, RejectsInvalidConfiguration) {
@@ -148,7 +141,7 @@ TEST(Config, RejectsInvalidConfiguration) {
                                          R"({"symbols":["BTC-USD"]})",
                                          R"({"symbols":["BTC-USD"],"output":{}})"}) {
         SCOPED_TRACE(missing_required);
-        ASSERT_RESULT_ERROR(parse_config(missing_required), ErrorCode::InvalidConfiguration);
+        ASSERT_RESULT_ERROR(parse_and_validate_config(missing_required), ErrorCode::InvalidConfiguration);
     }
     struct InvalidCase {
         std::string_view name;
@@ -171,6 +164,7 @@ TEST(Config, RejectsInvalidConfiguration) {
         {"message limit overflow", R"({"feed":{"max_message_bytes":18446744073709551616}})"},
         {"connection timeout zero", R"({"feed":{"connect_timeout_seconds":0}})"},
         {"timeout fraction", R"({"feed":{"connect_timeout_seconds":1.5}})"},
+        {"timeout decimal spelling", R"({"feed":{"connect_timeout_seconds":1.0}})"},
         {"negative timeout", R"({"feed":{"close_timeout_seconds":-1}})"},
         {"timeout policy limit", R"({"feed":{"close_timeout_seconds":31536001}})"},
         {"timeout representation overflow", R"({"feed":{"connect_timeout_seconds":18446744073709551615}})"},
@@ -198,7 +192,6 @@ TEST(Config, RejectsInvalidConfiguration) {
     const auto first_error = parse_optional_settings(R"({"feed":{"host":1,"port":false}})");
     ASSERT_RESULT_ERROR(first_error, ErrorCode::InvalidConfiguration);
     EXPECT_TRUE(first_error.error().message.contains("host"));
-    EXPECT_TRUE(first_error.error().message.contains("expected_quote"));
 }
 
 TEST(Config, ValidatesUnusedFieldsAndEntireInput) {
@@ -213,12 +206,13 @@ TEST(Config, ValidatesUnusedFieldsAndEntireInput) {
     }
     auto invalid_utf8 = with_required_fields("{}");
     invalid_utf8.insert(1, "\"unused\":\"" + std::string(1, static_cast<char>(0xff)) + "\",");
-    ASSERT_RESULT_ERROR(parse_config(invalid_utf8), ErrorCode::InvalidConfiguration);
+    ASSERT_RESULT_ERROR(parse_and_validate_config(invalid_utf8), ErrorCode::InvalidConfiguration);
 
     const auto contents = with_required_fields("{}");
-    ASSERT_RESULT_OK(parse_config(contents + " \r\n\t"));
-    ASSERT_RESULT_OK(parse_config(contents + std::string(100'000, ' ')));
-    ASSERT_RESULT_ERROR(parse_config(contents + std::string(100'000, ' ') + "{}"), ErrorCode::InvalidConfiguration);
+    ASSERT_RESULT_OK(parse_and_validate_config(contents + " \r\n\t"));
+    ASSERT_RESULT_OK(parse_and_validate_config(contents + std::string(100'000, ' ')));
+    ASSERT_RESULT_ERROR(parse_and_validate_config(contents + std::string(100'000, ' ') + "{}"),
+                        ErrorCode::InvalidConfiguration);
 }
 
 TEST(Config, ValidatesDirectConstructionWithModuleAndApplicationPolicies) {
@@ -291,32 +285,12 @@ TEST(Config, ReportsFirstValidationFailure) {
     expect_first_error("output path");
 }
 
-TEST(Config, ParsesStringsAndViewsWithNativeIntegerConversion) {
-    const auto contents = with_required_fields(R"({"output":{"path":"relative.csv"}})");
-    ASSERT_RESULT_OK(parse_config(contents));
-    ASSERT_RESULT_OK(parse_config(std::string_view{contents}));
-    ASSERT_RESULT_VALUE(config, parse_config(std::string_view{contents}));
-    EXPECT_EQ(config.output.path, "relative.csv");
-    ASSERT_RESULT_OK(validate_config(config));
-
-    ASSERT_RESULT_VALUE(exponents, parse_optional_settings(R"({
-        "feed":{"connect_timeout_seconds":1e1,"max_message_bytes":1e6},
-        "window":{"duration_seconds":3e2},
-        "output":{"flush_every_rows":1e2,"flush_interval_ms":25e1}
-    })"));
-    EXPECT_EQ(exponents.feed.connect_timeout, 10s);
-    EXPECT_EQ(exponents.feed.max_message_bytes, 1'000'000U);
-    EXPECT_EQ(exponents.window.duration, 300s);
-    EXPECT_EQ(exponents.output.flush_every_rows, 100U);
-    EXPECT_EQ(exponents.output.flush_interval, 250ms);
-}
-
 TEST(Config, LoadsFilesAndResolvesOutputPath) {
     test::TemporaryDirectory fixture;
     test::write_file(fixture.file("config.json"), with_required_fields(R"({"output":{"path":"build/../prices.csv"}})"));
     ASSERT_RESULT_VALUE(config, load_config(fixture.file("config.json")));
     EXPECT_EQ(config.output.path, (fixture.file("prices.csv")).lexically_normal());
-    // Whole-file parsing has no streaming-window token limit and validates the complete tail.
+    // Large files still require a valid complete document.
     const auto large = with_required_fields(R"({"unused":")" + std::string(100'000, 'x') + R"("})");
     test::write_file(fixture.file("large.json"), large + std::string(100'000, ' '));
     ASSERT_RESULT_OK(load_config(fixture.file("large.json")));

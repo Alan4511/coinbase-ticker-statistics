@@ -5,7 +5,7 @@ current options. Root `symbols` and `output.path` are required. Other settings
 use the defaults below. Known fields have strict type/range validation; unknown
 keys are ignored and duplicate JSON keys use their last value.
 
-`parse_config()` and `load_config()` return validated settings. `run_application()`
+`parse_and_validate_config()` and `load_config()` return validated settings. `run_application()`
 requires that validated configuration; direct C++ construction or changes require
 `validate_config()` before running.
 

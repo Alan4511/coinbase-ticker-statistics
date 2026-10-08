@@ -48,6 +48,8 @@ struct SubscriptionRequest {
 
 } // namespace coinbase_ticker_statistics::feed_json
 
+// Glaze metadata maps wire-field names to existing C++ members without
+// putting serialization annotations on the domain types.
 namespace glz {
 
 template <>
@@ -69,11 +71,14 @@ struct meta<coinbase_ticker_statistics::FeedConfig> {
                       key::max_message_bytes,
                       &T::max_message_bytes);
     }();
+    // Omitted connection settings retain FeedConfig's operational defaults.
     static constexpr bool requires_key(std::string_view, bool) {
         return false;
     }
 };
 
+// Coinbase encodes price as a JSON string. Decode it with Glaze, then reuse
+// the domain parser so precision and range rules have one owner.
 template <>
 struct from<JSON, coinbase_ticker_statistics::Price> {
     template <auto Options>
@@ -88,6 +93,8 @@ struct from<JSON, coinbase_ticker_statistics::Price> {
     }
 };
 
+// Glaze decodes the JSON string; the domain parser owns UTC syntax, calendar
+// validation and nanosecond conversion, keeping timestamp rules in one place.
 template <>
 struct from<JSON, coinbase_ticker_statistics::Timestamp> {
     template <auto Options>

@@ -9,7 +9,8 @@
 
 namespace coinbase_ticker_statistics::json_utils {
 
-/** Validate the whole document, including unused fields and nonterminated message buffers. */
+// Validate unused values and reject non-whitespace after the root document.
+// Beast supplies length-delimited frames, so parsing must not require a null terminator.
 struct ReadOptions : glz::opts {
     bool validate_skipped = true;
     bool validate_trailing_whitespace = true;
@@ -22,7 +23,8 @@ inline constexpr auto read_options = [] {
     return options;
 }();
 
-/** Translate native diagnostics only at the parsing boundary; never publish partial objects. */
+// Keep Glaze diagnostics behind the project's Result/ErrorCode boundary;
+// callers receive a complete value or an error, never a partially decoded object.
 template <typename T>
 Result<T> read_json(std::string_view input, ErrorCode category = ErrorCode::InvalidInput) {
     T value{};
@@ -35,7 +37,8 @@ Result<T> read_json(std::string_view input, ErrorCode category = ErrorCode::Inva
     return value;
 }
 
-/** Custom field parsers use Glaze's own error context and its owned diagnostic scratch storage. */
+// Carry domain-parser diagnostics through Glaze until read_json translates them.
+// The context owns the message so its diagnostic view remains valid during parsing.
 template <typename T>
 void assign_parsed(T &destination, Result<T> parsed, glz::context &context) {
     if (parsed) {

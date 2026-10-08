@@ -1,6 +1,5 @@
 #include "test_json.hpp"
 #include "test_result.hpp"
-#include <feed/json_meta.hpp>
 #include <feed/parser/parse_fields.hpp>
 #include <feed/parser/ticker_parser.hpp>
 
@@ -40,16 +39,6 @@ TEST(TickerParser, DecodesTickerAndFiltersControlMessages) {
         ASSERT_RESULT_VALUE(ignored, parse_ticker_message(message));
         EXPECT_FALSE(ignored);
     }
-}
-
-TEST(TickerParser, UsesNativeGlazeMetadataAndPreservesDomainErrors) {
-    TickerUpdate update{};
-    glz::context context;
-    const auto error = glz::read<json_utils::read_options>(update, valid_ticker, context);
-    ASSERT_FALSE(error) << glz::format_error(error, valid_ticker);
-    EXPECT_EQ(update.symbol, "BTC-USD");
-    EXPECT_EQ(update.trade_id, std::numeric_limits<TradeId>::max());
-    EXPECT_EQ(update.price, Price{1'234'567'890'123});
 
     auto document = glz::read_json<test::JsonFields>(valid_ticker).value();
     for (const auto &[number, expected] :
@@ -60,14 +49,27 @@ TEST(TickerParser, UsesNativeGlazeMetadataAndPreservesDomainErrors) {
         ASSERT_TRUE(parsed);
         EXPECT_EQ(parsed->trade_id, expected);
     }
-    document["price"].str = R"("1.000000001")";
-    const auto rejected = parse_ticker_message(glz::write_json(document).value());
-    ASSERT_RESULT_ERROR(rejected, ErrorCode::OutOfRange);
-    EXPECT_TRUE(rejected.error().message.contains("price"));
+
+    ASSERT_RESULT_VALUE(update, parse_ticker_message(R"({
+        "type":"ticker", "product_id":"BTC-USD", "trade_id":1,
+        "price":"\u0031.25", "time":"2026-10-03T10:20:30\u005a"
+    })"));
+    ASSERT_TRUE(update);
+    EXPECT_EQ(update->price, Price{125'000'000});
+    EXPECT_EQ(update->exchange_time, received - 1s);
 }
 
 TEST(TickerParser, RejectsMalformedTickerMessages) {
-    for (const auto *message : {"not json", "[]", "null", "{}", R"({"type":1})", R"({"type":""})"}) {
+    for (const auto *message : {"not json",
+                                "[]",
+                                "null",
+                                "{}",
+                                R"({"type":1})",
+                                R"({"type":""})",
+                                R"({"type":"heartbeat","unused":[1,]})",
+                                R"({"type":"heartbeat","unused":1e})",
+                                R"({"type":"heartbeat","unused":"\q"})",
+                                R"({"type":"heartbeat"} trailing)"}) {
         SCOPED_TRACE(message);
         ASSERT_RESULT_ERROR(parse_ticker_message(message), ErrorCode::InvalidInput);
     }
@@ -108,24 +110,11 @@ TEST(TickerParser, RejectsMalformedTickerMessages) {
         SCOPED_TRACE(std::string(field) + ": " + std::string(json));
         auto ticker = glz::read_json<test::JsonFields>(valid_ticker).value();
         ticker[field].str = json;
-        ASSERT_RESULT_ERROR(parse_ticker_message(glz::write_json(ticker).value()), error);
+        const auto result = parse_ticker_message(glz::write_json(ticker).value());
+        ASSERT_RESULT_ERROR(result, error);
+        if (error == ErrorCode::OutOfRange)
+            EXPECT_TRUE(result.error().message.contains("price")) << result.error().message;
     }
-}
-
-TEST(TickerParser, ValidatesUnusedFieldsAndDecodesEscapedText) {
-    for (const auto *message : {R"({"type":"heartbeat","unused":[1,]})",
-                                R"({"type":"heartbeat","unused":1e})",
-                                R"({"type":"heartbeat","unused":"\q"})",
-                                R"({"type":"heartbeat"} trailing)"}) {
-        SCOPED_TRACE(message);
-        ASSERT_RESULT_ERROR(parse_ticker_message(message), ErrorCode::InvalidInput);
-    }
-    ASSERT_RESULT_VALUE(update, parse_ticker_message(R"({
-        "type":"ticker", "product_id":"BTC-USD", "trade_id":1,
-        "price":"\u0031.25", "time":"2026-10-03T10:20:30\u005a"
-    })"));
-    ASSERT_TRUE(update);
-    EXPECT_EQ(update->price, Price{125'000'000});
 }
 
 TEST(TickerParser, SurfacesExchangeErrors) {

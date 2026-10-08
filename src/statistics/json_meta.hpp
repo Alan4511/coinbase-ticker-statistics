@@ -17,6 +17,7 @@ struct meta<coinbase_ticker_statistics::WindowOptions> {
     using T = coinbase_ticker_statistics::WindowOptions;
     static constexpr auto value =
         object(coinbase_ticker_statistics::statistics_json::key::duration_seconds, &T::duration);
+    // An omitted duration keeps WindowOptions' default window.
     static constexpr bool requires_key(std::string_view, bool) {
         return false;
     }

@@ -34,7 +34,7 @@ Result<Config> load_config(const std::filesystem::path &path) {
         const std::string contents{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
         if (stream.bad())
             return fail(ErrorCode::FileIo, "cannot read configuration file: " + path.string());
-        auto config = parse_config(contents);
+        auto config = parse_and_validate_config(contents);
         if (!config)
             return config;
         std::error_code error;

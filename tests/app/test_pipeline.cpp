@@ -23,7 +23,9 @@ TEST(Pipeline, FixtureMatchesIndependentExpectedCsv) {
     std::ifstream input(fixture_directory / "ticker_fixture.jsonl");
     ASSERT_TRUE(input.good());
     const auto expected = test::read_file(fixture_directory / "ticker_expected.csv");
-    ASSERT_RESULT_VALUE(config, parse_config(R"({"symbols":["BTC-USD","ETH-USD"],"output":{"path":"unused.csv"}})"));
+    ASSERT_RESULT_VALUE(
+        config,
+        parse_and_validate_config(R"({"symbols":["BTC-USD","ETH-USD"],"output":{"path":"unused.csv"}})"));
     std::ostringstream output;
     CsvWriter writer(output);
     ASSERT_RESULT_OK(writer.write_header());

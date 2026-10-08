@@ -27,6 +27,7 @@ struct meta<coinbase_ticker_statistics::CsvConfig> {
                       key::flush_interval_ms,
                       &T::flush_interval);
     }();
+    // Require a destination while retaining defaults for omitted batching settings.
     static constexpr bool requires_key(std::string_view name, bool) {
         return name == coinbase_ticker_statistics::output_json::key::path;
     }

@@ -14,7 +14,7 @@ namespace coinbase_ticker_statistics {
 [[nodiscard]] Result<void> validate_config(const Config &config);
 
 /** Parse and validate settings; the local object is returned only after all checks succeed. */
-[[nodiscard]] inline Result<Config> parse_config(std::string_view input) {
+[[nodiscard]] inline Result<Config> parse_and_validate_config(std::string_view input) {
     return json_utils::read_json<Config>(input, ErrorCode::InvalidConfiguration).and_then([](Config config) {
         return validate_config(config).transform([&] {
             return std::move(config);

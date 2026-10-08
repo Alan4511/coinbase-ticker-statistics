@@ -23,7 +23,8 @@ namespace glz {
 template <>
 struct meta<coinbase_ticker_statistics::Config> {
     using T = coinbase_ticker_statistics::Config;
-    // Each section is decoded into a fresh value so duplicate objects replace, rather than merge.
+    // Custom setters decode each repeated section into a fresh object, so the
+    // later section replaces the earlier one instead of merging populated fields.
     static constexpr auto read_feed = [](T &config, coinbase_ticker_statistics::FeedConfig feed) {
         config.feed = std::move(feed);
     };
