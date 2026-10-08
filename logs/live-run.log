@@ -1,6 +1,6 @@
-2026-10-07T06:09:56.492373000Z INFO starting: symbols=BTC-USD,ETH-USD,SOL-USD window_seconds=300
-2026-10-07T06:09:56.492408000Z INFO connecting: host=ws-feed.exchange.coinbase.com port=443 target=/ max_message_bytes=1048576 connect_timeout_seconds=15 close_timeout_seconds=5
-2026-10-07T06:09:57.988419000Z INFO connected: protocol=wss tls_verification=enabled channel=ticker subscription=sent
-2026-10-07T06:09:57.990547000Z INFO CSV ready: path=build/live.csv mode=truncate flush_every_rows=100 flush_interval_ms=250
-2026-10-07T06:10:28.043544000Z INFO shutdown requested: reason=SIGTERM
-2026-10-07T06:10:28.516607000Z INFO stopped: status=success received_messages=113 ticker_updates=112 emitted_rows=112 reason=SIGTERM
+2026-10-08T07:38:29.315654000Z INFO starting: symbols=BTC-USD,ETH-USD,SOL-USD window_seconds=300 max_observations_per_symbol=100000
+2026-10-08T07:38:29.316410000Z INFO connecting: host=ws-feed.exchange.coinbase.com port=443 target=/ max_message_bytes=1048576 connect_timeout_seconds=15 close_timeout_seconds=5
+2026-10-08T07:38:30.652634000Z INFO connected: protocol=wss tls_verification=enabled channel=ticker subscription=sent
+2026-10-08T07:38:30.656692000Z INFO CSV ready: path=build/live.csv mode=truncate flush_every_rows=100 flush_interval_ms=250
+2026-10-08T07:39:00.738830000Z INFO shutdown requested: reason=SIGTERM
+2026-10-08T07:39:01.052624000Z INFO stopped: status=success received_messages=134 ticker_updates=133 emitted_rows=133 reason=SIGTERM

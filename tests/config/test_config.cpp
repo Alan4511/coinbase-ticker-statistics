@@ -1,6 +1,7 @@
 #include "test_files.hpp"
 #include "test_json.hpp"
 #include "test_result.hpp"
+#include <common/json.hpp>
 #include <config/config.hpp>
 
 #include <glaze/json.hpp>
@@ -20,19 +21,19 @@ using namespace std::chrono_literals;
 /** Supply explicit required settings so partial inputs still exercise their intended validation. */
 std::string with_required_fields(std::string_view settings) {
     const auto provided = json_utils::read_json<test::JsonFields>(settings);
-    if (!provided)
+    if (!provided.has_value())
         return std::string(settings);
     auto document = glz::read_json<test::JsonFields>(R"({
         "symbols":["BTC-USD","ETH-USD","SOL-USD"],
         "output":{"path":"test.csv"}
     })")
                         .value();
-    for (const auto &[name, value] : *provided) {
+    for (const auto &[name, value] : provided.value()) {
         if (name == "output") {
             auto changes = glz::read_json<test::JsonFields>(value.str);
-            if (changes) {
+            if (changes.has_value()) {
                 auto output = glz::read_json<test::JsonFields>(document[name].str).value();
-                for (const auto &[field, setting] : *changes)
+                for (const auto &[field, setting] : changes.value())
                     output[field] = setting;
                 document[name].str = glz::write_json(output).value();
                 continue;
@@ -58,6 +59,7 @@ TEST(Config, ParsesRequiredDefaultsAndOverrides) {
     EXPECT_EQ(defaults.feed.connect_timeout, 15s);
     EXPECT_EQ(defaults.feed.close_timeout, 5s);
     EXPECT_EQ(defaults.window.duration, 300s);
+    EXPECT_EQ(defaults.window.max_observations_per_symbol, 100'000U);
     EXPECT_EQ(defaults.output.path, "test.csv");
     EXPECT_EQ(defaults.output.flush_every_rows, 100U);
     EXPECT_EQ(defaults.output.flush_interval, 250ms);
@@ -109,6 +111,8 @@ TEST(Config, ParsesRequiredDefaultsAndOverrides) {
     EXPECT_EQ(exponents.window.duration, 300s);
     EXPECT_EQ(exponents.output.flush_every_rows, 100U);
     EXPECT_EQ(exponents.output.flush_interval, 250ms);
+    ASSERT_RESULT_VALUE(limited, parse_optional_settings(R"({"window":{"max_observations_per_symbol":42}})"));
+    EXPECT_EQ(limited.window.max_observations_per_symbol, 42U);
 }
 
 TEST(Config, PreservesUnknownAndDuplicateKeyPolicies) {
@@ -170,6 +174,10 @@ TEST(Config, RejectsInvalidConfiguration) {
         {"timeout representation overflow", R"({"feed":{"connect_timeout_seconds":18446744073709551615}})"},
         {"window section", R"({"window":[]})"},
         {"window zero", R"({"window":{"duration_seconds":0}})"},
+        {"observation limit zero", R"({"window":{"max_observations_per_symbol":0}})"},
+        {"observation limit negative", R"({"window":{"max_observations_per_symbol":-1}})"},
+        {"observation limit fraction", R"({"window":{"max_observations_per_symbol":2.5}})"},
+        {"observation limit overflow", R"({"window":{"max_observations_per_symbol":18446744073709551616}})"},
         {"window negative", R"({"window":{"duration_seconds":-1}})"},
         {"window numeric coercion", R"({"window":{"duration_seconds":300.0}})"},
         {"window boolean", R"({"window":{"duration_seconds":true}})"},

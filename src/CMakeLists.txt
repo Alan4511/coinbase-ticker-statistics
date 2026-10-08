@@ -1,3 +1,4 @@
+add_subdirectory(common)
 add_subdirectory(statistics)
 add_subdirectory(feed)
 add_subdirectory(output)

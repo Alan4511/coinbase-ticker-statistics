@@ -1,5 +1,6 @@
 #include "output/csv_writer.hpp"
 #include "output/format_fields.hpp"
+#include <common/format_timestamp.hpp>
 
 #include <ios>
 #include <string>
@@ -59,28 +60,28 @@ Result<void> CsvWriter::write_text(std::string_view text) {
 Result<void> CsvWriter::write_statistics(const StatisticsUpdate &update) {
     row_.clear(); // Retain storage between updates.
     const auto timestamp = format_utc_timestamp(update.ticker_update.exchange_time);
-    if (!timestamp)
+    if (!timestamp.has_value())
         return std::unexpected(timestamp.error());
-    row_ += *timestamp;
+    row_ += timestamp.value();
     row_ += ',';
     append_field(row_, update.ticker_update.symbol);
     const auto append_numeric_field = [this](const auto &value) -> Result<void> {
         row_ += ',';
         return append_number(row_, value);
     };
-    if (auto result = append_numeric_field(update.ticker_update.trade_id); !result)
+    if (auto result = append_numeric_field(update.ticker_update.trade_id); !result.has_value())
         return result;
-    if (auto result = append_numeric_field(update.ticker_update.price); !result)
+    if (auto result = append_numeric_field(update.ticker_update.price); !result.has_value())
         return result;
-    if (auto result = append_numeric_field(update.statistics.count); !result)
+    if (auto result = append_numeric_field(update.statistics.count); !result.has_value())
         return result;
     const auto &statistics = update.statistics;
     for (const auto &value : {statistics.mean, statistics.median}) {
-        if (auto result = append_numeric_field(value); !result)
+        if (auto result = append_numeric_field(value); !result.has_value())
             return result;
     }
     for (const auto value : {statistics.low, statistics.high}) {
-        if (auto result = append_numeric_field(value); !result)
+        if (auto result = append_numeric_field(value); !result.has_value())
             return result;
     }
     row_ += '\n';

@@ -48,6 +48,7 @@ deadlines are enforced; there is no idle-feed timeout.
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `duration_seconds` | `300` | Integer in 1..31536000; use 3600 for one hour. |
+| `max_observations_per_symbol` | `100000` | Positive integer limit on retained observations in each symbol's window. |
 
 Window membership is `(t-duration,t]`, using each symbol's exchange time. Equal
 timestamps are valid; decreasing timestamps fail before duplicate checking.
@@ -55,10 +56,12 @@ Retained duplicate trade IDs are ignored, considering prospective expiration;
 ignored duplicates do not mutate state, advance time or emit rows. IDs are
 forgotten after expiration. Idle windows expire on the next accepted event.
 
-All accepted samples remain until expiration. There is no sample-count cap;
-memory depends on arrival rate and window duration. The old
-`max_observations_per_symbol` key has no effect. Mean weights each ticker equally,
-not by volume or elapsed time. Prices use eight-decimal integer ticks in the
+All accepted samples remain until expiration. Capacity is checked after prospective
+expiration and duplicate filtering. If a new observation would exceed the limit,
+the run fails with `OutOfRange` before changing that window; no samples are dropped
+or approximated. The limit bounds retained observations, not total process memory
+or allocation latency. Raise it for longer or busier windows. Mean weights each
+ticker equally, not by volume or elapsed time. Prices use eight-decimal integer ticks in the
 range `0..92233720368.54775807`; finer nonzero decimal places are rejected.
 Mean and median are calculated exactly and rounded to eight decimal places only
 for CSV, using nearest, ties-to-even. Scale and rounding are fixed policies;

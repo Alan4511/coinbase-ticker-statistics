@@ -1,12 +1,10 @@
 #pragma once
 
-#include "json_meta.hpp"
 #include "settings.hpp"
 #include <common/result.hpp>
 
 #include <filesystem>
 #include <string_view>
-#include <utility>
 
 namespace coinbase_ticker_statistics {
 
@@ -14,13 +12,7 @@ namespace coinbase_ticker_statistics {
 [[nodiscard]] Result<void> validate_config(const Config &config);
 
 /** Parse and validate settings; the local object is returned only after all checks succeed. */
-[[nodiscard]] inline Result<Config> parse_and_validate_config(std::string_view input) {
-    return json_utils::read_json<Config>(input, ErrorCode::InvalidConfiguration).and_then([](Config config) {
-        return validate_config(config).transform([&] {
-            return std::move(config);
-        });
-    });
-}
+[[nodiscard]] Result<Config> parse_and_validate_config(std::string_view input);
 
 /** Load validated JSON and resolve output paths; success satisfies run_application's precondition. */
 [[nodiscard]] Result<Config> load_config(const std::filesystem::path &path);

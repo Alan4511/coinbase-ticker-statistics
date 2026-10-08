@@ -1,4 +1,5 @@
 #include "config/config.hpp"
+#include "config/json_meta.hpp"
 #include <feed/subscription.hpp>
 
 #include <filesystem>
@@ -9,8 +10,16 @@
 #include <utility>
 
 namespace coinbase_ticker_statistics {
+Result<Config> parse_and_validate_config(std::string_view input) {
+    return json_utils::read_json<Config>(input, ErrorCode::InvalidConfiguration).and_then([](Config config) {
+        return validate_config(config).transform([&] {
+            return std::move(config);
+        });
+    });
+}
+
 Result<void> validate_config(const Config &config) {
-    if (auto valid = validate(config.symbols); !valid)
+    if (auto valid = validate(config.symbols); !valid.has_value())
         return valid;
     std::set<Symbol> subscribed_symbols;
     for (const auto &symbol : config.symbols) {
@@ -35,13 +44,13 @@ Result<Config> load_config(const std::filesystem::path &path) {
         if (stream.bad())
             return fail(ErrorCode::FileIo, "cannot read configuration file: " + path.string());
         auto config = parse_and_validate_config(contents);
-        if (!config)
+        if (!config.has_value())
             return config;
         std::error_code error;
         const auto directory = std::filesystem::absolute(path, error).parent_path();
         if (error)
             return fail(ErrorCode::FileIo, "cannot resolve configuration path: " + error.message());
-        config->output.path = (directory / config->output.path).lexically_normal();
+        config.value().output.path = (directory / config.value().output.path).lexically_normal();
         return config;
     } catch (const std::ios_base::failure &error) {
         return fail(ErrorCode::FileIo, "cannot read configuration file: " + path.string() + ": " + error.what());

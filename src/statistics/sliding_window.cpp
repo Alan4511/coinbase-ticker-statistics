@@ -8,13 +8,14 @@
 namespace coinbase_ticker_statistics {
 
 Result<SlidingWindow> SlidingWindow::create(WindowOptions options) {
-    if (auto valid = validate(options); !valid)
+    if (auto valid = validate(options); !valid.has_value())
         return std::unexpected(std::move(valid.error()));
     return SlidingWindow(std::move(options));
 }
 
 SlidingWindow::SlidingWindow(WindowOptions options)
-    : duration_(std::chrono::duration_cast<std::chrono::nanoseconds>(options.duration)) {
+    : duration_(std::chrono::duration_cast<std::chrono::nanoseconds>(options.duration)),
+      max_observations_(options.max_observations_per_symbol) {
 }
 
 Result<std::optional<Statistics>> SlidingWindow::add_update(const TickerUpdate &ticker_update) {
@@ -22,7 +23,7 @@ Result<std::optional<Statistics>> SlidingWindow::add_update(const TickerUpdate &
     if (ticker_update.price.ticks < 0) {
         return fail(ErrorCode::InvalidInput, "Price must be non-negative");
     }
-    if (last_accepted_time_ && window_time < *last_accepted_time_) {
+    if (last_accepted_time_.has_value() && window_time < last_accepted_time_.value()) {
         return fail(ErrorCode::OutOfOrderTimestamp, "Window time precedes the last accepted ticker update");
     }
 
@@ -33,14 +34,17 @@ Result<std::optional<Statistics>> SlidingWindow::add_update(const TickerUpdate &
         return std::nullopt;
     }
     auto update = prepare_update(ticker_update);
-    if (!update)
+    if (!update.has_value())
         return std::unexpected(update.error());
-    for (SampleCount index = 0; index < update->expired_sample_count; ++index) {
+    for (SampleCount index = 0; index < update.value().expired_sample_count; ++index) {
         remove_oldest_sample();
     }
+    // Expiration preserves ordering between partitions. Restore their sizes once
+    // before insertion uses the lower partition's maximum to choose a side.
+    rebalance_price_partitions();
 
     insert_update(ticker_update);
-    sum_ = update->sum_after_update;
+    sum_ = update.value().sum_after_update;
     last_accepted_time_ = window_time;
     return snapshot();
 }
@@ -58,8 +62,8 @@ Result<SlidingWindow::PendingUpdate> SlidingWindow::prepare_update(const TickerU
         ++expired_sample_count;
     }
     const SampleCount retained_sample_count = samples_.size() - expired_sample_count;
-    if (retained_sample_count == std::numeric_limits<SampleCount>::max())
-        return fail(ErrorCode::OutOfRange, "Window sample count exceeds its integer range");
+    if (retained_sample_count >= max_observations_)
+        return fail(ErrorCode::OutOfRange, "Window observation limit exceeded; no samples were dropped");
     // The maximum int64 price times the maximum 64-bit count fits in PriceSum.
     candidate_sum += static_cast<std::uint64_t>(ticker_update.price.ticks);
     return PendingUpdate{expired_sample_count, candidate_sum};
@@ -117,7 +121,6 @@ void SlidingWindow::remove_oldest_sample() {
     }
     retained_trade_times_.erase(trade_id);
     samples_.pop_front();
-    rebalance_price_partitions();
 }
 
 void SlidingWindow::rebalance_price_partitions() {

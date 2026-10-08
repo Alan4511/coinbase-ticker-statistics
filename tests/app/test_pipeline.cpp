@@ -34,10 +34,10 @@ TEST(Pipeline, FixtureMatchesIndependentExpectedCsv) {
     std::string message;
     while (std::getline(input, message)) {
         ASSERT_RESULT_VALUE(event, parse_ticker_message(message));
-        if (event) {
-            ASSERT_RESULT_VALUE(update, processor.on_update(*event));
-            if (update) {
-                ASSERT_RESULT_OK(writer.write_statistics(*update));
+        if (event.has_value()) {
+            ASSERT_RESULT_VALUE(update, processor.on_update(event.value()));
+            if (update.has_value()) {
+                ASSERT_RESULT_OK(writer.write_statistics(update.value()));
                 ++emitted;
             }
         }

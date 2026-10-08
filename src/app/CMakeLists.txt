@@ -3,6 +3,7 @@ add_library(coinbase_ticker_statistics_application
 )
 
 target_link_libraries(coinbase_ticker_statistics_application PUBLIC
+    coinbase_ticker_statistics_common
     coinbase_ticker_statistics_statistics
     coinbase_ticker_statistics_feed
     coinbase_ticker_statistics_output

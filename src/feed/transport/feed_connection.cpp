@@ -122,7 +122,7 @@ class FeedConnection::Session {
                 static_cast<void>(deadline_.cancel());
                 state_ = State::Reading;
                 auto ready = events_.on_connected();
-                if (!ready)
+                if (!ready.has_value())
                     begin_close(std::move(ready));
                 else if (state_ == State::Reading)
                     read_next_message();
@@ -150,7 +150,7 @@ class FeedConnection::Session {
             const std::string_view message(static_cast<const char *>(bytes.data()), bytes.size());
             auto delivered = events_.on_message(message);
             buffer_.consume(buffer_.size());
-            if (!delivered)
+            if (!delivered.has_value())
                 begin_close(std::move(delivered));
             else if (state_ == State::Reading)
                 read_next_message();
@@ -162,7 +162,7 @@ class FeedConnection::Session {
         if (state_ == State::Stopped)
             return;
         // A consumer may request stop synchronously before returning its failure.
-        if (result_ && !result)
+        if (result_.has_value() && !result.has_value())
             result_ = std::move(result);
         if (state_ == State::Closing)
             return;
@@ -192,7 +192,7 @@ class FeedConnection::Session {
         if (state_ == State::Stopped)
             return;
         state_ = State::Stopped;
-        if (result_ && !result)
+        if (result_.has_value() && !result.has_value())
             result_ = std::move(result);
         resolver_.cancel();
         static_cast<void>(deadline_.cancel());
@@ -215,11 +215,11 @@ class FeedConnection::Session {
 
 Result<std::unique_ptr<FeedConnection>>
 FeedConnection::create_session(net::io_context &io, FeedConfig config, std::string subscription, Events events) {
-    if (auto valid = validate(config); !valid)
+    if (auto valid = validate(config); !valid.has_value())
         return std::unexpected(std::move(valid.error()));
     try {
         auto session = std::make_unique<Session>(io, std::move(config), std::move(subscription), std::move(events));
-        if (auto configured = session->configure(); !configured)
+        if (auto configured = session->configure(); !configured.has_value())
             return std::unexpected(std::move(configured.error()));
         // make_unique cannot call the private constructor; ownership is immediate.
         return std::unique_ptr<FeedConnection>(new FeedConnection(std::move(session)));

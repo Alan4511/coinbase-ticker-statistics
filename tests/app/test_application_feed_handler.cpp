@@ -1,5 +1,6 @@
 #include "test_result.hpp"
 #include <app/application_feed_handler.hpp>
+#include <runtime/run_control_handle.hpp>
 
 #include <gtest/gtest.h>
 
@@ -12,7 +13,7 @@ namespace {
 
 struct RecordingSink {
     Result<void> write_statistics(const StatisticsUpdate &update) {
-        if (!result)
+        if (!result.has_value())
             return result;
         updates.push_back(update);
         return {};
@@ -29,19 +30,20 @@ struct CountingSink {
     std::size_t count{};
 };
 
-struct TestLifecycle {
-    Result<void> on_connected(ExecutionContext &) {
+struct TestApplication {
+    Result<void> on_connected() {
         return {};
     }
-    void on_stopped(ExecutionContext &context, Result<void> result) {
-        context.on_stopped(std::move(result));
+    void on_stopped(Result<void> result) {
+        control_handle.on_stopped(std::move(result));
     }
+    RunControlHandle &control_handle;
 };
 
 static_assert(OutputSink<RecordingSink>);
 static_assert(OutputSink<CountingSink>);
-static_assert(FeedHandler<ApplicationFeedHandler<RecordingSink, TestLifecycle>>);
-static_assert(FeedHandler<ApplicationFeedHandler<CountingSink, TestLifecycle>>);
+static_assert(FeedHandler<ApplicationFeedHandler<RecordingSink, TestApplication>>);
+static_assert(FeedHandler<ApplicationFeedHandler<CountingSink, TestApplication>>);
 
 TickerUpdate update(TradeId id, std::int64_t units, Symbol symbol = "BTC-USD", Timestamp time = Timestamp{}) {
     return {time, std::move(symbol), id, Price{units * Price::ticks_per_unit}};
@@ -51,16 +53,16 @@ TEST(ApplicationFeedHandler, RoutesStatisticsToAnyOutputSink) {
     RunControl control([] {
         ADD_FAILURE() << "synchronous routing must return its errors";
     });
-    ExecutionContext context(control);
-    TestLifecycle lifecycle;
+    RunControlHandle control_handle(control);
+    TestApplication application{control_handle};
     const auto route_updates = [&]<OutputSink Sink>(Sink &sink) {
         ASSERT_RESULT_VALUE(processor, StatisticsProcessor::create({"BTC-USD", "ETH-USD"}, {}));
-        ApplicationFeedHandler handler(std::move(processor), sink, lifecycle);
-        ASSERT_RESULT_OK(handler.on_message(context, update(1, 10)));
-        ASSERT_RESULT_OK(handler.on_message(context, update(2, 20)));
-        ASSERT_RESULT_OK(handler.on_message(context, update(1, 100, "ETH-USD")));
-        ASSERT_RESULT_OK(handler.on_message(context, update(1, 100, "ETH-USD")));
-        ASSERT_RESULT_OK(handler.on_message(context, update(1, 50, "SOL-USD")));
+        ApplicationFeedHandler handler(std::move(processor), sink, application);
+        ASSERT_RESULT_OK(handler.on_message(update(1, 10)));
+        ASSERT_RESULT_OK(handler.on_message(update(2, 20)));
+        ASSERT_RESULT_OK(handler.on_message(update(1, 100, "ETH-USD")));
+        ASSERT_RESULT_OK(handler.on_message(update(1, 100, "ETH-USD")));
+        ASSERT_RESULT_OK(handler.on_message(update(1, 50, "SOL-USD")));
         EXPECT_EQ(handler.emitted_rows(), 3U);
     };
     RecordingSink recorded;
@@ -81,17 +83,17 @@ TEST(ApplicationFeedHandler, PropagatesProcessingAndSinkFailures) {
     RunControl control([] {
         ADD_FAILURE() << "synchronous routing must return its errors";
     });
-    ExecutionContext context(control);
-    TestLifecycle lifecycle;
+    RunControlHandle control_handle(control);
+    TestApplication application{control_handle};
     RecordingSink sink;
     ASSERT_RESULT_VALUE(processor, StatisticsProcessor::create({"BTC-USD"}, {}));
-    ApplicationFeedHandler handler(std::move(processor), sink, lifecycle);
-    ASSERT_RESULT_OK(handler.on_message(context, update(1, 10, "BTC-USD", Timestamp{std::chrono::seconds{1}})));
-    ASSERT_RESULT_ERROR(handler.on_message(context, update(2, 20)), ErrorCode::OutOfOrderTimestamp);
+    ApplicationFeedHandler handler(std::move(processor), sink, application);
+    ASSERT_RESULT_OK(handler.on_message(update(1, 10, "BTC-USD", Timestamp{std::chrono::seconds{1}})));
+    ASSERT_RESULT_ERROR(handler.on_message(update(2, 20)), ErrorCode::OutOfOrderTimestamp);
     EXPECT_EQ(sink.updates.size(), 1U);
     EXPECT_EQ(handler.emitted_rows(), 1U);
     sink.result = fail(ErrorCode::OutputIo, "sink rejected update");
-    const auto result = handler.on_message(context, update(2, 20, "BTC-USD", Timestamp{std::chrono::seconds{2}}));
+    const auto result = handler.on_message(update(2, 20, "BTC-USD", Timestamp{std::chrono::seconds{2}}));
     ASSERT_RESULT_ERROR(result, ErrorCode::OutputIo);
     EXPECT_EQ(result.error().message, "sink rejected update");
     EXPECT_EQ(sink.updates.size(), 1U);

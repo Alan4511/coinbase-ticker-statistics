@@ -1,6 +1,6 @@
 #pragma once
 
-#include <output/format_fields.hpp>
+#include <common/format_timestamp.hpp>
 
 #include <chrono>
 #include <exception>
@@ -27,12 +27,12 @@ class Logger {
         try {
             const auto now = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
             const auto timestamp = format_utc_timestamp(now);
-            if (!timestamp)
+            if (!timestamp.has_value())
                 return;
             std::ostringstream message;
             message.imbue(std::locale::classic());
             (message << ... << parts);
-            std::string line = *timestamp + (level == LogLevel::Info ? " INFO " : " ERROR ");
+            std::string line = timestamp.value() + (level == LogLevel::Info ? " INFO " : " ERROR ");
             // Exchange errors and paths may contain line breaks; keep one record per line.
             for (const char character : message.str()) {
                 if (character == '\n')

@@ -9,13 +9,20 @@ linux-tests:
   parallel:
     matrix:
       - CXX: [g++, clang++]
+        BUILD_TYPE: [Release]
+        ENABLE_SANITIZERS: ["OFF"]
+      - CXX: [clang++]
+        BUILD_TYPE: [Debug]
+        ENABLE_SANITIZERS: ["ON"]
   variables:
     DEBIAN_FRONTEND: noninteractive
+    ASAN_OPTIONS: "detect_leaks=1:halt_on_error=1"
+    UBSAN_OPTIONS: "halt_on_error=1:print_stacktrace=1"
   before_script:
     - apt-get update
     - apt-get install -y --no-install-recommends g++ clang cmake ninja-build git ca-certificates libssl-dev python3
   script:
-    - cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$CXX"
+    - cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_CXX_COMPILER="$CXX" -DCOINBASE_TICKER_STATISTICS_SANITIZERS="$ENABLE_SANITIZERS"
     - cmake --build build --parallel 2
     - ctest --test-dir build --output-on-failure --output-junit "$CI_PROJECT_DIR/build/linux-tests.xml" --output-log "$CI_PROJECT_DIR/build/linux-tests.log"
     - python3 tools/verify_csv.py --config data/fixture_config.json --require-expiration

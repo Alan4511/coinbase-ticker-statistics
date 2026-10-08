@@ -5,8 +5,8 @@
 
 namespace coinbase_ticker_statistics {
 
-CsvSink::CsvSink(boost::asio::io_context &io, CsvConfig config, ExecutionContext &context)
-    : config_(std::move(config)), context_(context), flush_timer_(io), writer_(stream_) {
+CsvSink::CsvSink(boost::asio::io_context &io, CsvConfig config, RunControlHandle &control_handle)
+    : config_(std::move(config)), control_handle_(control_handle), flush_timer_(io), writer_(stream_) {
 }
 
 const CsvConfig &CsvSink::config() const noexcept {
@@ -14,7 +14,7 @@ const CsvConfig &CsvSink::config() const noexcept {
 }
 
 Result<void> CsvSink::open() {
-    if (auto valid = validate(config_); !valid)
+    if (auto valid = validate(config_); !valid.has_value())
         return valid;
     if (stream_.is_open())
         return fail(ErrorCode::InvalidState, "CSV output is already open");
@@ -32,7 +32,7 @@ Result<void> CsvSink::open() {
 }
 
 Result<void> CsvSink::write_statistics(const StatisticsUpdate &update) {
-    if (auto written = writer_.write_statistics(update); !written)
+    if (auto written = writer_.write_statistics(update); !written.has_value())
         return written;
     ++pending_rows_;
     if (pending_rows_ >= config_.flush_every_rows)
@@ -49,8 +49,8 @@ void CsvSink::schedule_flush() {
         // Ignore cancelled waits and already-ready handlers from an earlier batch.
         if (error || deadline != flush_timer_.expiry() || pending_rows_ == 0)
             return;
-        if (auto flushed = flush_pending(); !flushed)
-            context_.fail(std::move(flushed.error()));
+        if (auto flushed = flush_pending(); !flushed.has_value())
+            control_handle_.fail(std::move(flushed.error()));
     };
     flush_timer_.async_wait(on_flush_due);
 }
@@ -58,7 +58,7 @@ void CsvSink::schedule_flush() {
 Result<void> CsvSink::flush_pending() {
     static_cast<void>(flush_timer_.cancel());
     auto flushed = writer_.flush();
-    if (flushed)
+    if (flushed.has_value())
         pending_rows_ = 0;
     return flushed;
 }
@@ -70,7 +70,7 @@ Result<void> CsvSink::close() {
     auto flushed = writer_.flush();
     stream_.close();
     pending_rows_ = 0;
-    if (!flushed)
+    if (!flushed.has_value())
         return flushed;
     if (stream_.fail())
         return fail(ErrorCode::OutputIo, "Closing CSV output failed");

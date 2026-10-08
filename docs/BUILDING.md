@@ -41,3 +41,10 @@ ctest --test-dir build/sanitized --output-on-failure
 
 The default sanitizer set is `address,undefined`. Select UBSan alone with
 `-DCOINBASE_TICKER_STATISTICS_SANITIZER_SET=undefined`.
+
+## CI verification
+
+The GitLab pipeline runs GCC and Clang Release builds, plus a Clang Debug build
+with ASan/UBSan. Each job runs the local TLS tests and independent fixture verifier,
+and archives its test report. A Docker/Kubernetes GitLab runner is required; the
+pipeline definition alone is not evidence of a passing Linux run.

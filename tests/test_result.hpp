@@ -40,4 +40,4 @@ template <typename T>
 #define ASSERT_RESULT_VALUE(name, expression)                                                                          \
     auto name##_result = (expression);                                                                                 \
     ASSERT_RESULT_OK(name##_result);                                                                                   \
-    auto &name = *name##_result
+    auto &name = name##_result.value()

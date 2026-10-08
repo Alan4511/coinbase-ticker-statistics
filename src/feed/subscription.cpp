@@ -34,14 +34,14 @@ Result<void> validate(const Symbols &symbols) {
 }
 
 Result<std::string> encode_ticker_subscription(const Symbols &symbols) {
-    if (auto valid = validate(symbols); !valid)
+    if (auto valid = validate(symbols); !valid.has_value())
         return std::unexpected(valid.error());
     using namespace feed_json;
     const SubscriptionRequest request{key::subscribe, symbols, std::array{std::string_view{key::ticker}}};
     auto encoded = glz::write_json(request);
-    if (!encoded)
+    if (!encoded.has_value())
         return fail(ErrorCode::Protocol, "cannot encode ticker subscription: " + glz::format_error(encoded.error()));
-    return std::move(*encoded);
+    return std::move(encoded.value());
 }
 
 } // namespace coinbase_ticker_statistics

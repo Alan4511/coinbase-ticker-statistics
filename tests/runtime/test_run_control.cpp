@@ -1,5 +1,5 @@
 #include "test_result.hpp"
-#include <runtime/execution_context.hpp>
+#include <runtime/run_control_handle.hpp>
 
 #include <gtest/gtest.h>
 
@@ -12,16 +12,17 @@ TEST(RunControl, PreservesFirstFailureAcrossReentrantAndCleanupFailures) {
     unsigned stop_requests{};
     RunControl control([&] {
         ++stop_requests;
-        EXPECT_TRUE(control.stopping());
+        EXPECT_EQ(control.state(), RunControl::State::Stopping);
         ASSERT_RESULT_ERROR(control.result(), ErrorCode::OutputIo);
         control.complete(fail(ErrorCode::Transport, "close deadline exceeded"));
     });
-    ExecutionContext context(control);
-    context.fail(Error{ErrorCode::OutputIo, "timed flush failed"});
-    context.fail(Error{ErrorCode::FileIo, "cleanup failed"});
-    context.request_stop("SIGTERM");
+    RunControlHandle control_handle(control);
+    control_handle.fail(Error{ErrorCode::OutputIo, "timed flush failed"});
+    control_handle.fail(Error{ErrorCode::FileIo, "cleanup failed"});
+    control_handle.request_stop("SIGTERM");
     EXPECT_EQ(stop_requests, 1U);
-    EXPECT_TRUE(context.stopping());
+    EXPECT_TRUE(control_handle.shutdown_started());
+    EXPECT_EQ(control.state(), RunControl::State::Completed);
     ASSERT_RESULT_ERROR(control.result(), ErrorCode::OutputIo);
     EXPECT_EQ(control.result().error().message, "timed flush failed");
     EXPECT_EQ(control.stop_reason(), "fatal error");
@@ -34,21 +35,24 @@ TEST(RunControl, StopAndCompletionAreIdempotent) {
         RunControl control([&] {
             ++stop_requests;
         });
-        ExecutionContext context(control);
-        EXPECT_FALSE(context.stopping());
+        RunControlHandle control_handle(control);
+        EXPECT_FALSE(control_handle.shutdown_started());
+        EXPECT_EQ(control.state(), RunControl::State::Running);
         if (signal_requested) {
             std::string reason = "SIGINT";
-            context.request_stop(reason);
+            control_handle.request_stop(reason);
+            EXPECT_EQ(control.state(), RunControl::State::Stopping);
             reason = "changed";
-            context.request_stop("SIGTERM");
+            control_handle.request_stop("SIGTERM");
         }
-        context.on_stopped({});
-        context.on_stopped({});
-        context.request_stop("late signal");
-        EXPECT_TRUE(context.stopping());
+        control_handle.on_stopped({});
+        control_handle.on_stopped({});
+        control_handle.request_stop("late signal");
+        EXPECT_TRUE(control_handle.shutdown_started());
+        EXPECT_EQ(control.state(), RunControl::State::Completed);
         ASSERT_RESULT_OK(control.result());
         EXPECT_EQ(control.stop_reason(), signal_requested ? "SIGINT" : "peer closed connection");
-        context.fail(Error{ErrorCode::OutputIo, "final flush failed"});
+        control_handle.fail(Error{ErrorCode::OutputIo, "final flush failed"});
         ASSERT_RESULT_ERROR(control.result(), ErrorCode::OutputIo);
         EXPECT_EQ(control.result().error().message, "final flush failed");
         EXPECT_EQ(stop_requests, signal_requested ? 1U : 0U);

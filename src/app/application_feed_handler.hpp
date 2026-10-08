@@ -11,35 +11,36 @@
 namespace coinbase_ticker_statistics {
 
 /** Route ticker updates into statistics and any OutputSink.
- * The explicit lifecycle owner coordinates startup/cleanup separately from sink delivery.
- * The sink and lifecycle owner must outlive pending feed operations.
+ * Bound to one application at construction, so callbacks need no run-control handle argument.
+ * The application coordinates startup and cleanup separately from sink delivery.
+ * The sink and application must outlive pending feed operations.
  */
-template <OutputSink Sink, typename Lifecycle>
+template <OutputSink Sink, typename Application>
 class ApplicationFeedHandler final {
   public:
-    ApplicationFeedHandler(StatisticsProcessor processor, Sink &sink, Lifecycle &lifecycle)
-        : processor_(std::move(processor)), sink_(sink), lifecycle_(lifecycle) {
+    ApplicationFeedHandler(StatisticsProcessor processor, Sink &sink, Application &application)
+        : processor_(std::move(processor)), sink_(sink), application_(application) {
     }
 
-    [[nodiscard]] Result<void> on_connected(ExecutionContext &context) {
-        return lifecycle_.on_connected(context);
+    [[nodiscard]] Result<void> on_connected() {
+        return application_.on_connected();
     }
 
     /** Handle one received ticker update, which can represent batched matches. */
-    [[nodiscard]] Result<void> on_message(ExecutionContext &, const TickerUpdate &ticker_update) {
+    [[nodiscard]] Result<void> on_message(const TickerUpdate &ticker_update) {
         auto update = processor_.on_update(ticker_update);
-        if (!update)
+        if (!update.has_value())
             return std::unexpected(std::move(update.error()));
-        if (!*update)
+        if (!update.value().has_value())
             return {};
-        if (auto written = sink_.write_statistics(**update); !written)
+        if (auto written = sink_.write_statistics(update.value().value()); !written.has_value())
             return written;
         ++emitted_rows_;
         return {};
     }
 
-    void on_stopped(ExecutionContext &context, Result<void> completion) {
-        lifecycle_.on_stopped(context, std::move(completion));
+    void on_stopped(Result<void> completion) {
+        application_.on_stopped(std::move(completion));
     }
 
     ApplicationFeedHandler(const ApplicationFeedHandler &) = delete;
@@ -52,7 +53,7 @@ class ApplicationFeedHandler final {
   private:
     StatisticsProcessor processor_;
     Sink &sink_;
-    Lifecycle &lifecycle_;
+    Application &application_;
     std::size_t emitted_rows_{};
 };
 

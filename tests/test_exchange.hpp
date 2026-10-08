@@ -1,5 +1,7 @@
 #pragma once
 
+#include "test_files.hpp"
+
 #include <common/types.hpp>
 #include <feed/transport/feed_config.hpp>
 
@@ -40,8 +42,8 @@ class TestTrustStore {
             throw std::runtime_error("cannot set test trust store");
     }
     ~TestTrustStore() {
-        if (previous_)
-            ::setenv(variable, previous_->c_str(), 1);
+        if (previous_.has_value())
+            ::setenv(variable, previous_.value().c_str(), 1);
         else
             ::unsetenv(variable);
     }
@@ -68,16 +70,19 @@ class LoopbackExchange {
   public:
     LoopbackExchange(const Symbols &symbols,
                      const std::vector<std::string> &messages,
-                     ExchangeReply reply = ExchangeReply::Text)
+                     ExchangeReply reply = ExchangeReply::Text,
+                     const std::filesystem::path &accepted_path = {})
         : LoopbackExchange(std::format(R"({{"type":"subscribe","product_ids":{},"channels":["ticker"]}})",
                                        glz::write_json(symbols).value()),
                            messages,
-                           reply) {
+                           reply,
+                           accepted_path) {
     }
 
     LoopbackExchange(std::string expected_subscription,
                      const std::vector<std::string> &messages,
-                     ExchangeReply reply = ExchangeReply::Text) {
+                     ExchangeReply reply = ExchangeReply::Text,
+                     const std::filesystem::path &accepted_path = {}) {
         namespace net = boost::asio;
         namespace beast = boost::beast;
         using Tcp = net::ip::tcp;
@@ -98,6 +103,8 @@ class LoopbackExchange {
             beast::websocket::stream<beast::ssl_stream<Tcp::socket>> socket(io, tls);
             acceptor.accept(beast::get_lowest_layer(socket));
             acceptor.close();
+            if (!accepted_path.empty())
+                write_file(accepted_path, "TCP accepted\n");
             if (reply == ExchangeReply::StallTls)
                 for (;;)
                     ::pause();
@@ -126,7 +133,7 @@ class LoopbackExchange {
         }
     }
     ~LoopbackExchange() {
-        if (!status_) {
+        if (!status_.has_value()) {
             ::kill(pid_, SIGKILL);
             int status{};
             ::waitpid(pid_, &status, 0);
@@ -139,13 +146,13 @@ class LoopbackExchange {
         return config_;
     }
     bool completed_successfully() {
-        if (!status_) {
+        if (!status_.has_value()) {
             int status{};
             if (::waitpid(pid_, &status, 0) != pid_)
                 return false;
             status_ = status;
         }
-        return WIFEXITED(*status_) && WEXITSTATUS(*status_) == 0;
+        return WIFEXITED(status_.value()) && WEXITSTATUS(status_.value()) == 0;
     }
 
   private:

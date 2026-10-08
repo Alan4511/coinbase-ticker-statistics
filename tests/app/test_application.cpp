@@ -94,6 +94,42 @@ TEST(Application, ProcessingFailureStopsAndFlushesPreviousRows) {
     EXPECT_TRUE(exchange.completed_successfully());
 }
 
+TEST(Application, ProcessingFailureSurvivesCloseDeadline) {
+    test::TemporaryDirectory directory;
+    auto config = configuration(directory.file("output.csv"));
+    test::TestTrustStore trust;
+    const std::string malformed = R"({"type":"ticker"})";
+    test::LoopbackExchange exchange(config.symbols, {ticker, malformed}, test::ExchangeReply::RemainIdle);
+    config.feed = exchange.config();
+    config.feed.close_timeout = Duration{1};
+    std::ostringstream diagnostics;
+    Logger logger(diagnostics);
+    const auto started = std::chrono::steady_clock::now();
+    ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::InvalidInput);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    EXPECT_GE(elapsed, std::chrono::seconds{1});
+    EXPECT_LT(elapsed, std::chrono::seconds{3});
+    EXPECT_EQ(test::read_file(config.output.path), header + row);
+    EXPECT_NE(diagnostics.str().find("stopped: status=failure"), std::string::npos);
+}
+
+TEST(Application, CapacityFailureStopsAndFlushesAcceptedRows) {
+    test::TemporaryDirectory directory;
+    auto config = configuration(directory.file("output.csv"));
+    config.window.max_observations_per_symbol = 1;
+    test::TestTrustStore trust;
+    const std::string next =
+        R"({"type":"ticker","product_id":"BTC-USD","trade_id":43,"price":"2","time":"2026-01-02T03:04:05Z"})";
+    test::LoopbackExchange exchange(config.symbols, {ticker, ticker, next}, test::ExchangeReply::WaitForClientClose);
+    config.feed = exchange.config();
+    std::ostringstream diagnostics;
+    Logger logger(diagnostics);
+    ASSERT_RESULT_ERROR(run_application(config, logger), ErrorCode::OutOfRange);
+    EXPECT_EQ(test::read_file(config.output.path), header + row);
+    EXPECT_NE(diagnostics.str().find("Window observation limit exceeded"), std::string::npos);
+    EXPECT_TRUE(exchange.completed_successfully());
+}
+
 /** Own a child application so signals never target the test runner. */
 class ApplicationProcess {
   public:
@@ -101,25 +137,39 @@ class ApplicationProcess {
                        const std::filesystem::path &diagnostics_path,
                        std::optional<std::size_t> file_size_limit = std::nullopt,
                        std::optional<ErrorCode> expected_error = std::nullopt) {
-        if (auto valid = validate_config(config); !valid)
+        if (auto valid = validate_config(config); !valid.has_value())
             throw std::runtime_error("invalid test application configuration: " + valid.error().message);
         pid_ = ::fork();
         if (pid_ < 0)
             throw std::runtime_error("cannot fork test application");
         if (pid_ == 0) {
             ::alarm(6);
-            if (file_size_limit && !test::limit_child_file_size(*file_size_limit))
-                ::_exit(2);
+            rlimit original_limit{};
+            if (file_size_limit.has_value()) {
+                if (::getrlimit(RLIMIT_FSIZE, &original_limit) != 0 ||
+                    !test::limit_child_file_size(file_size_limit.value()))
+                    ::_exit(2);
+            }
             std::ofstream diagnostics(diagnostics_path);
-            Logger logger(diagnostics);
+            // Inject failure only into CSV output, not the diagnostic destination.
+            std::ostringstream captured;
+            Logger logger(file_size_limit.has_value() ? static_cast<std::ostream &>(captured) : diagnostics);
             const auto result = run_application(config, logger);
-            if (expected_error && (result || result.error().code != *expected_error))
+            if (file_size_limit.has_value()) {
+                if (::setrlimit(RLIMIT_FSIZE, &original_limit) != 0)
+                    ::_exit(2);
+                diagnostics << captured.str();
+                diagnostics.flush();
+                if (!diagnostics)
+                    ::_exit(2);
+            }
+            if (expected_error.has_value() && (result.has_value() || result.error().code != expected_error.value()))
                 ::_exit(3);
-            ::_exit(result ? 0 : 1);
+            ::_exit(result.has_value() ? 0 : 1);
         }
     }
     ~ApplicationProcess() {
-        if (!status_) {
+        if (!status_.has_value()) {
             ::kill(pid_, SIGKILL);
             int ignored{};
             ::waitpid(pid_, &ignored, 0);
@@ -143,7 +193,7 @@ class ApplicationProcess {
         return false;
     }
     int exit_code() const {
-        int status = *status_;
+        int status = status_.value();
         return WEXITSTATUS(status);
     }
 
@@ -202,6 +252,50 @@ TEST(Application, TimedOutputFailureStopsIdleFeed) {
     ApplicationProcess app(config, directory.file("application.log"), header.size(), ErrorCode::OutputIo);
     ASSERT_TRUE(app.wait_for_exit());
     EXPECT_EQ(app.exit_code(), 1);
+    EXPECT_EQ(test::read_file(config.output.path), header);
+    EXPECT_TRUE(exchange.completed_successfully());
+}
+
+TEST(Application, SignalDuringConnectionSetupPreservesExistingOutput) {
+    for (const int signal : {SIGINT, SIGTERM}) {
+        SCOPED_TRACE(signal);
+        test::TemporaryDirectory directory;
+        auto config = configuration(directory.file("existing.csv"));
+        test::write_file(config.output.path, "previous run\n");
+        const auto accepted = directory.file("accepted.txt");
+        const auto diagnostics = directory.file("application.log");
+        test::TestTrustStore trust;
+        test::LoopbackExchange exchange(config.symbols, {}, test::ExchangeReply::StallTls, accepted);
+        config.feed = exchange.config();
+        ApplicationProcess app(config, diagnostics);
+        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        while (!std::filesystem::exists(accepted) && std::chrono::steady_clock::now() < until)
+            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+        ASSERT_TRUE(std::filesystem::exists(accepted));
+        ASSERT_TRUE(app.send_signal(signal));
+        ASSERT_TRUE(app.wait_for_exit());
+        EXPECT_EQ(app.exit_code(), 0);
+        EXPECT_EQ(test::read_file(config.output.path), "previous run\n");
+        EXPECT_NE(test::read_file(diagnostics).find("stopped: status=success"), std::string::npos);
+    }
+}
+
+TEST(Application, CleanupFailureIsLoggedWithoutReplacingProcessingFailure) {
+    test::TemporaryDirectory directory;
+    auto config = configuration(directory.file("output.csv"));
+    config.output.flush_interval = std::chrono::seconds{30};
+    const auto diagnostics = directory.file("application.log");
+    test::TestTrustStore trust;
+    test::LoopbackExchange exchange(config.symbols,
+                                    {ticker, R"({"type":"ticker"})"},
+                                    test::ExchangeReply::WaitForClientClose);
+    config.feed = exchange.config();
+    ApplicationProcess app(config, diagnostics, header.size(), ErrorCode::InvalidInput);
+    ASSERT_TRUE(app.wait_for_exit());
+    EXPECT_EQ(app.exit_code(), 1);
+    const auto log = test::read_file(diagnostics);
+    EXPECT_NE(log.find("ERROR output cleanup failed:"), std::string::npos);
+    EXPECT_NE(log.find("ERROR stopped: status=failure"), std::string::npos);
     EXPECT_EQ(test::read_file(config.output.path), header);
     EXPECT_TRUE(exchange.completed_successfully());
 }

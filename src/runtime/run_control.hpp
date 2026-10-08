@@ -10,36 +10,51 @@
 
 namespace coinbase_ticker_statistics {
 
-/** Application-owned run state. All operations execute on the event-loop thread. */
+/** Own the run's lifecycle state, first failure and application-supplied stop policy.
+ * The application or its coordinator declares whole-run completion.
+ * All operations execute on the event-loop thread.
+ */
 class RunControl {
   public:
+    enum class State {
+        Running,
+        Stopping,
+        // Run coordination has ended; pending callbacks and resource cleanup may still follow.
+        Completed
+    };
+
     explicit RunControl(std::function<void()> stop) : stop_(std::move(stop)) {
     }
 
     void fail(Error error) {
-        if (result_)
+        // For Result<void>, has_value() means no error yet; preserve the first failure.
+        if (result_.has_value())
             result_ = std::unexpected(std::move(error));
         request_stop("fatal error");
     }
 
     void request_stop(std::string_view reason) {
-        if (stopping_)
+        if (state_ != State::Running)
             return;
         // Set state before invoking policy: stop() may synchronously report completion.
-        stopping_ = true;
+        state_ = State::Stopping;
         stop_reason_ = reason;
         stop_();
     }
 
     void complete(Result<void> completion) {
-        // Completion suppresses further stop requests, including cleanup failures.
-        stopping_ = true;
-        if (result_ && !completion)
+        // This is a completion notification, not a stop request.
+        // Suppress further stop callbacks, including those triggered by cleanup failures.
+        state_ = State::Completed;
+        if (result_.has_value() && !completion.has_value())
             result_ = std::move(completion);
     }
 
-    [[nodiscard]] bool stopping() const noexcept {
-        return stopping_;
+    [[nodiscard]] State state() const noexcept {
+        return state_;
+    }
+    [[nodiscard]] bool shutdown_started() const noexcept {
+        return state_ != State::Running;
     }
     [[nodiscard]] const Result<void> &result() const noexcept {
         return result_;
@@ -55,7 +70,7 @@ class RunControl {
     std::function<void()> stop_;
     Result<void> result_;
     std::string stop_reason_{"peer closed connection"};
-    bool stopping_{};
+    State state_{State::Running};
 };
 
 } // namespace coinbase_ticker_statistics

@@ -32,10 +32,4 @@ template <std::unsigned_integral Number>
 /** Render an exact decimal price without locale conversion or scientific notation. */
 [[nodiscard]] Result<std::string> format_price(Price price);
 
-/**
- * Format a UTC timestamp with nine fractional digits for deterministic CSV output.
- * @return UTC text, or OutOfRange for a year outside 1970..2200.
- */
-[[nodiscard]] Result<std::string> format_utc_timestamp(Timestamp timestamp);
-
 } // namespace coinbase_ticker_statistics

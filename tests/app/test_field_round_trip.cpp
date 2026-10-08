@@ -1,4 +1,5 @@
 #include "test_result.hpp"
+#include <common/format_timestamp.hpp>
 #include <feed/parser/parse_fields.hpp>
 #include <output/format_fields.hpp>
 

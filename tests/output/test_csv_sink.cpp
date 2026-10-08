@@ -31,9 +31,9 @@ TEST(CsvSink, FlushesByThresholdOrDeadline) {
     RunControl control([] {
         ADD_FAILURE() << "unexpected asynchronous flush failure";
     });
-    ExecutionContext context(control);
+    RunControlHandle control_handle(control);
     boost::asio::io_context io;
-    CsvSink sink(io, config, context);
+    CsvSink sink(io, config, control_handle);
     ASSERT_RESULT_OK(sink.open());
     EXPECT_EQ(test::read_file(config.path), header);
     std::string published(header);
@@ -69,8 +69,8 @@ TEST(CsvSink, CloseFlushesAndCancelsPendingWork) {
     RunControl control([] {
         ADD_FAILURE() << "unexpected asynchronous flush failure";
     });
-    ExecutionContext context(control);
-    CsvSink sink(io, config, context);
+    RunControlHandle control_handle(control);
+    CsvSink sink(io, config, control_handle);
     ASSERT_RESULT_OK(sink.close());
     ASSERT_RESULT_OK(sink.open());
     ASSERT_RESULT_OK(sink.write_statistics(sample_update()));
@@ -81,7 +81,7 @@ TEST(CsvSink, CloseFlushesAndCancelsPendingWork) {
     ASSERT_RESULT_OK(sink.close());
 }
 
-TEST(CsvSink, ReportsTimedFlushFailureThroughExecutionContext) {
+TEST(CsvSink, ReportsTimedFlushFailureThroughRunControlHandle) {
     test::TemporaryDirectory directory;
     CsvConfig config{directory.file("statistics.csv")};
     config.flush_interval = 20ms;
@@ -96,14 +96,14 @@ TEST(CsvSink, ReportsTimedFlushFailureThroughExecutionContext) {
         RunControl control([&stop_requests] {
             ++stop_requests;
         });
-        ExecutionContext context(control);
-        CsvSink sink(io, config, context);
-        if (!sink.open() || !sink.write_statistics(sample_update()))
+        RunControlHandle control_handle(control);
+        CsvSink sink(io, config, control_handle);
+        if (!sink.open().has_value() || !sink.write_statistics(sample_update()).has_value())
             ::_exit(3); // The row must be buffered successfully before the timer fails.
         io.run();
         const auto closed = sink.close();
-        ::_exit(!control.result() && control.result().error().code == ErrorCode::OutputIo && stop_requests == 1 &&
-                        !closed
+        ::_exit(!control.result().has_value() && control.result().error().code == ErrorCode::OutputIo &&
+                        stop_requests == 1 && !closed.has_value()
                     ? 0
                     : 4);
     }

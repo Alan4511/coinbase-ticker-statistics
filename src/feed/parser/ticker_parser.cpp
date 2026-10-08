@@ -6,15 +6,15 @@ namespace coinbase_ticker_statistics {
 Result<std::optional<TickerUpdate>> parse_ticker_message(std::string_view message) {
     using namespace feed_json;
     auto header = json_utils::read_json<MessageHeader>(message);
-    if (!header)
+    if (!header.has_value())
         return std::unexpected(std::move(header.error()));
-    if (header->type.empty())
+    if (header.value().type.empty())
         return fail(ErrorCode::InvalidInput, "type: expected a nonempty string");
-    if (header->type == key::error) {
-        auto description = json_utils::read_json<std::string>(header->message.str);
+    if (header.value().type == key::error) {
+        auto description = json_utils::read_json<std::string>(header.value().message.str);
         return fail(ErrorCode::Protocol, "Coinbase feed error: " + description.value_or("unspecified exchange error"));
     }
-    if (header->type != key::ticker)
+    if (header.value().type != key::ticker)
         return std::nullopt;
     return json_utils::read_json<TickerUpdate>(message).and_then(
         [](TickerUpdate update) -> Result<std::optional<TickerUpdate>> {

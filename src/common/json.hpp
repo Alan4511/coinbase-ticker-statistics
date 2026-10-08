@@ -41,8 +41,8 @@ Result<T> read_json(std::string_view input, ErrorCode category = ErrorCode::Inva
 // The context owns the message so its diagnostic view remains valid during parsing.
 template <typename T>
 void assign_parsed(T &destination, Result<T> parsed, glz::context &context) {
-    if (parsed) {
-        destination = std::move(*parsed);
+    if (parsed.has_value()) {
+        destination = std::move(parsed.value());
         return;
     }
     context.error = parsed.error().code == ErrorCode::OutOfRange ? glz::error_code::constraint_violated

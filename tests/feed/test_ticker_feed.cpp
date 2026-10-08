@@ -17,22 +17,22 @@ const std::string ticker =
 class FeedRun final {
   public:
     Result<void> configure(FeedConfig config, const Symbols &products = symbols) {
-        auto created = TickerFeed<FeedRun>::create(io, std::move(config), products, *this, context);
-        if (!created)
+        auto created = TickerFeed<FeedRun>::create(io, std::move(config), products, *this, control_handle);
+        if (!created.has_value())
             return std::unexpected(std::move(created.error()));
-        feed = std::move(*created);
+        feed = std::move(created.value());
         return {};
     }
-    Result<void> on_connected(ExecutionContext &) {
+    Result<void> on_connected() {
         ++connected;
         return {};
     }
-    Result<void> on_message(ExecutionContext &, const TickerUpdate &ticker_update) {
+    Result<void> on_message(const TickerUpdate &ticker_update) {
         ticker_updates.push_back(ticker_update);
         return message_result;
     }
-    void on_stopped(ExecutionContext &received_context, Result<void> result) {
-        received_context.on_stopped(result);
+    void on_stopped(Result<void> result) {
+        control_handle.on_stopped(result);
         ++stopped;
         outcome = std::move(result);
     }
@@ -45,7 +45,7 @@ class FeedRun final {
     RunControl control{[this] {
         feed->stop();
     }};
-    ExecutionContext context{control};
+    RunControlHandle control_handle{control};
     std::unique_ptr<TickerFeed<FeedRun>> feed;
     std::vector<TickerUpdate> ticker_updates;
     Result<void> outcome;
@@ -61,14 +61,14 @@ static_assert(!FeedHandler<int>);
 static_assert(!std::is_polymorphic_v<FeedRun>);
 
 struct IncompleteHandler {
-    Result<void> on_connected(ExecutionContext &);
-    Result<void> on_message(ExecutionContext &, const TickerUpdate &);
+    Result<void> on_connected();
+    Result<void> on_message(const TickerUpdate &);
 };
 
 struct WrongResultHandler {
-    Result<void> on_connected(ExecutionContext &);
-    bool on_message(ExecutionContext &, const TickerUpdate &);
-    void on_stopped(ExecutionContext &, Result<void>);
+    Result<void> on_connected();
+    bool on_message(const TickerUpdate &);
+    void on_stopped(Result<void>);
 };
 
 static_assert(!FeedHandler<IncompleteHandler>);

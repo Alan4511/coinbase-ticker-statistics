@@ -2,7 +2,8 @@
 
 A C++23 application that consumes Coinbase's public ticker feed and writes
 mean, median, low and high to CSV for each subscribed symbol. Each symbol has
-an independent sliding window, defaulting to five minutes. Prices use exact
+an independent sliding window, defaulting to five minutes with a configurable
+limit of 100,000 retained observations per symbol. Prices use exact
 integer ticks; mean and median round to eight decimal places in CSV. No API key
 is required.
 

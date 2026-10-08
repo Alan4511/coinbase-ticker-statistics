@@ -3,7 +3,7 @@
 ## Architecture and ownership
 
 ```text
-Application — lifecycle, signals, RunControl and ExecutionContext
+Application — lifecycle, signals, RunControl and RunControlHandle
     |
     +— TickerFeed — FeedConnection — Beast/Asio
     |
@@ -25,16 +25,45 @@ and routing without implementing CSV lifecycle methods. Templates express these
 boundaries; private transport callbacks keep Beast types out of consumer headers.
 
 The application owns runtime objects and keeps borrowed handlers, the sink and
-execution context alive until I/O drains. Message views and typed updates are
-borrowed only for synchronous delivery. `ExecutionContext` exposes failure,
-stop and completion operations without owning feed or output policy.
+run-control handle alive until I/O drains. Message views and typed updates are
+borrowed only for synchronous delivery. `RunControlHandle` is retained as a
+borrowed reporting interface so reusable modules do not depend on `Application`.
+It owns no state or executor; `RunControl` owns run state and the stop policy.
+Feed callbacks carry only ticker updates and completion results; the feed and
+sink retain their run-control handles for failure reporting, while the application
+uses its own handle for lifecycle coordination. Handlers bind dependencies at
+construction, trading per-callback handle flexibility for a smaller event contract.
 `RunControl` preserves the first failure, including through reentrant shutdown
-and subsequent cleanup errors.
+and subsequent cleanup errors. Its running, stopping and completed states
+distinguish a stop request from completion; completion ends event processing,
+while resource cleanup and destruction may still follow.
 
 Shared vocabulary and JSON helpers live in `common/`; lifecycle coordination
 lives in `runtime/`. The feed root exposes its typed protocol interface,
 `parser/` decodes messages and `transport/` owns the reusable connection. Tests
 mirror these responsibilities.
+
+## Extensibility
+
+- **Additional feeds:** reuse `FeedConnection` for transport, with a separate
+  subscription encoder, parser and protocol adapter. The current `FeedHandler`
+  contract delivers `TickerUpdate`; other payloads need a corresponding typed
+  contract or conversion into that model.
+- **Alternative output:** implement `OutputSink::write_statistics()` and reuse
+  the templated application handler. Application wiring must still provide the
+  destination's configuration, startup and cleanup; CSV lifecycle operations
+  are not required by the delivery contract.
+- **Multiple connections:** a future feed manager can own connections for symbol
+  groups on the same event loop. It must add group configuration, track individual
+  feed readiness/completion, open shared output once, and wait for all feeds to
+  stop before completing the run and closing output. Each handler remains bound
+  to its dependencies at construction.
+
+Components may share one `RunControlHandle`, or borrow separate handles backed
+by the same `RunControl`. They share run state and shutdown policy; handles do
+not identify feeds or aggregate completion. That coordination belongs to the
+application or future manager. The shipped application uses one ticker connection
+and one CSV sink.
 
 ## Configuration and JSON boundary
 
@@ -67,7 +96,8 @@ The pinned tagged-variant reader changes required-tag and dispatch semantics,
 so separate dispatch preserves the current protocol behavior.
 Decoded strings preserve JSON escapes, and the resulting update owns its symbol.
 Glaze's header-only mappings reduce manual field assembly at the cost of template
-compilation; the public config header also exposes that dependency to callers.
+compilation. Configuration parsing and mappings stay in the implementation, so
+including the public config API does not instantiate or expose Glaze parsing.
 No parsing throughput improvement is claimed without measurement.
 
 `symbols` and `output.path` are required. Defaults and ranges are listed in
@@ -88,7 +118,9 @@ Each symbol has an independent exchange-time window `(t-duration, t]`. A deque
 expires observations; two ordered multisets maintain the median, minimum and
 maximum. A retained-ID index filters duplicates. Updating a window that expires
 K observations costs O((K+1) log N); snapshots cost O(1), and storage is O(N).
-Tree allocation trades speed and cache locality for readable invariants.
+Tree allocation trades speed and cache locality for readable invariants. Bulk
+expiration restores partition sizes once before insertion, avoiding intermediate
+node transfers after each removal; asymptotic complexity remains unchanged.
 
 Retained duplicates do not advance time or mutate the window. IDs may be reused
 after expiration. Decreasing timestamps are fatal, and arithmetic is checked
@@ -100,9 +132,15 @@ can batch cascading matches, so these statistics describe received observations,
 not a complete trade tape or a volume-weighted average.
 
 The assignment permits bounded-error approximation, but this implementation
-keeps every accepted observation until expiration. There is no sample-count cap
-or approximation mode: memory grows with arrival rate and window duration.
-Allocation failure is fatal rather than silently dropping data.
+keeps every accepted observation until expiration, subject to a configurable
+per-symbol limit (100,000 by default). Capacity is checked after prospective
+expiration; overflow fails before mutation rather than silently dropping data.
+The default is an operational starting point, not a measured exchange-rate budget.
+This bounds retained sample count, not total process bytes or allocation latency.
+Node containers remain dynamically allocated; no pool or full-capacity reservation
+is added without evidence that its complexity or upfront memory cost is worthwhile.
+Allocation failure is fatal and reported explicitly; under memory exhaustion even
+diagnostic construction is best effort, so recovery is not promised.
 
 ## Asynchronous transport and shutdown
 
@@ -124,7 +162,13 @@ On SIGINT/SIGTERM or a fatal failure, application policy stops the feed. Setup i
 cancelled or a normal WebSocket close begins; the deadline forces transport
 closure if the peer does not respond. Feed completion closes output and cancels
 the signal wait, then the event loop drains. The original failure survives
-cleanup errors. Closing the connection requires no separate unsubscribe.
+cleanup errors; final CSV cleanup failures are also logged separately. Closing
+the connection requires no separate unsubscribe.
+
+Normal completion closes output before the event loop drains; final reporting
+does not close it again. Unexpected exceptions use an emergency abort path that
+stops the event loop and closes output even if feed completion never runs.
+This can abandon an in-progress WebSocket close handshake.
 
 One connection carries all configured symbols. Coinbase's
 [best practices](https://docs.cdp.coinbase.com/exchange/websocket-feed/best-practices)
@@ -156,7 +200,7 @@ frequency without providing that isolation; no latency or throughput claim is ma
 
 Immediate write and threshold-flush failures return `Result<void>`. Timer flush
 failures occur after `write_statistics()` returns, so they report asynchronously
-through `ExecutionContext`; the application owns fatal-error and shutdown policy.
+through `RunControlHandle`; the application owns fatal-error and shutdown policy.
 The sink has no feed dependency. Batching delays visibility and error detection;
 a failed flush can leave fewer rows than the emitted counter reports. Flush does
 not ensure disk durability, and crashes or SIGKILL can lose pending rows.
@@ -192,7 +236,8 @@ The example symbols' increments were representable in the 2026-10-07 metadata
 check; this is not a permanent exchange-wide precision guarantee. Products
 requiring finer prices are unsupported. Exact fractions and wide integer division
 add formatting work in exchange for portable, exact stored prices and statistics.
-This numeric policy does not bound memory use or approximate the window.
+The observation limit bounds sample count separately from this numeric policy;
+it does not approximate the window.
 
 ## Explicit scope
 
@@ -207,20 +252,28 @@ summary go to stderr for both INFO and ERROR. Per-ticker logging is omitted
 because CSV already records accepted updates. Collection and rotation belong to
 the environment.
 
+Logging and CSV share UTC formatting in `common/`; numeric CSV formatting stays
+in `output/`. A small common library keeps the formatter implementation out of
+consumer headers and avoids a logging dependency on the output module.
+
 ## Verification approach
 
 Tests exercise production entry points with table-driven inputs and independent
 references. Randomized windows are checked against a sorted reference; a
 JSON-lines fixture covers parsing, statistics and CSV together. Local TLS servers
-verify cancellation, TLS trust, signal shutdown and partial-batch visibility.
+verify cancellation during setup, TLS trust, signal shutdown, first-failure
+preservation across close/CSV failures, and partial-batch visibility.
 Tests need loopback access but no external feed.
 
 The [test report](../logs/test-results.log) records Release and UBSan runs.
 AddressSanitizer could not initialize on this host, including for an empty program;
-no ASan pass is claimed. [Live diagnostics](../logs/live-run.log) and
+no ASan pass is claimed. The empty-program check was repeated on 2026-10-08
+inside and outside the sandbox with the same initialization failure.
+[Live diagnostics](../logs/live-run.log) and
 [independent live verification](../logs/live-verification.log) record continuous
 output and graceful shutdown. The short capture does not cover five-minute
-expiration; deterministic tests do. Linux CI results must be confirmed separately.
+expiration; deterministic tests do. Linux CI defines GCC/Clang Release and Clang
+ASan/UBSan jobs, but runner results must be confirmed separately; no Linux runtime is available on this development host.
 
 See [Build setup](BUILDING.md) for sanitizer options and the README for commands.
 Generated CSVs and build/CI artifacts stay under ignored `build/`; `logs/` retains

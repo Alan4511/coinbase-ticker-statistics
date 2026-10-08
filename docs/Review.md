@@ -1,2 +1,8 @@
 main.cpp
-logger.hpp leaking util function from output/format_fields (consider refactor)
+logger.hpp
+config/
+common/json.hpp
+app/
+common/format_*
+common/result.hpp
+

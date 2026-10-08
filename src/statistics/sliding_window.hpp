@@ -32,6 +32,7 @@ class SlidingWindow {
      * duplicates return nullopt without changing any state.
      * @return Statistics, a successful nullopt for filtered events, or a typed error.
      * InvalidInput, OutOfOrderTimestamp, and OutOfRange leave state unchanged.
+     * Capacity is checked after prospective expiration; exceeding it is OutOfRange.
      */
     [[nodiscard]] Result<std::optional<Statistics>> add_update(const TickerUpdate &ticker_update);
 
@@ -54,6 +55,7 @@ class SlidingWindow {
     void rebalance_price_partitions();
 
     std::chrono::nanoseconds duration_;
+    SampleCount max_observations_;
     std::optional<Timestamp> last_accepted_time_;
     std::deque<WindowSample> samples_;
     std::unordered_map<TradeId, Timestamp> retained_trade_times_;

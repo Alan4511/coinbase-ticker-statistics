@@ -23,11 +23,11 @@ constexpr auto valid_ticker = R"({
 TEST(TickerParser, DecodesTickerAndFiltersControlMessages) {
     ASSERT_RESULT_VALUE(received, parse_utc_timestamp("2026-10-03T10:20:31Z"));
     ASSERT_RESULT_VALUE(result, parse_ticker_message(valid_ticker));
-    ASSERT_TRUE(result);
-    EXPECT_EQ(result->symbol, "BTC-USD");
-    EXPECT_EQ(result->trade_id, std::numeric_limits<TradeId>::max());
-    EXPECT_EQ(result->price, Price{1'234'567'890'123});
-    EXPECT_EQ(result->exchange_time, received - 1s + 123'456'789ns);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().symbol, "BTC-USD");
+    EXPECT_EQ(result.value().trade_id, std::numeric_limits<TradeId>::max());
+    EXPECT_EQ(result.value().price, Price{1'234'567'890'123});
+    EXPECT_EQ(result.value().exchange_time, received - 1s + 123'456'789ns);
     // Only the framed view belongs to the message; the next byte is deliberately not a terminator.
     const std::string framed_message = std::string(valid_ticker) + "not part of the frame";
     ASSERT_RESULT_OK(
@@ -37,7 +37,7 @@ TEST(TickerParser, DecodesTickerAndFiltersControlMessages) {
                                 R"({"type":"future-message-kind","payload":{}})"}) {
         SCOPED_TRACE(message);
         ASSERT_RESULT_VALUE(ignored, parse_ticker_message(message));
-        EXPECT_FALSE(ignored);
+        EXPECT_FALSE(ignored.has_value());
     }
 
     auto document = glz::read_json<test::JsonFields>(valid_ticker).value();
@@ -46,17 +46,17 @@ TEST(TickerParser, DecodesTickerAndFiltersControlMessages) {
         SCOPED_TRACE(number);
         document["trade_id"].str = number;
         ASSERT_RESULT_VALUE(parsed, parse_ticker_message(glz::write_json(document).value()));
-        ASSERT_TRUE(parsed);
-        EXPECT_EQ(parsed->trade_id, expected);
+        ASSERT_TRUE(parsed.has_value());
+        EXPECT_EQ(parsed.value().trade_id, expected);
     }
 
     ASSERT_RESULT_VALUE(update, parse_ticker_message(R"({
         "type":"ticker", "product_id":"BTC-USD", "trade_id":1,
         "price":"\u0031.25", "time":"2026-10-03T10:20:30\u005a"
     })"));
-    ASSERT_TRUE(update);
-    EXPECT_EQ(update->price, Price{125'000'000});
-    EXPECT_EQ(update->exchange_time, received - 1s);
+    ASSERT_TRUE(update.has_value());
+    EXPECT_EQ(update.value().price, Price{125'000'000});
+    EXPECT_EQ(update.value().exchange_time, received - 1s);
 }
 
 TEST(TickerParser, RejectsMalformedTickerMessages) {

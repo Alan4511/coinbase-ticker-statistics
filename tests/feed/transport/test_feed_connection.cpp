@@ -18,13 +18,13 @@ class ConnectionRun final {
   public:
     Result<void> configure(FeedConfig config, std::string subscription) {
         auto created = FeedConnection::create(io, std::move(config), std::move(subscription), *this);
-        if (!created)
+        if (!created.has_value())
             return std::unexpected(std::move(created.error()));
-        connection = std::move(*created);
+        connection = std::move(created.value());
         return {};
     }
     Result<void> configure(FeedConfig config) {
-        return configure(std::move(config), *encode_ticker_subscription(symbols));
+        return configure(std::move(config), encode_ticker_subscription(symbols).value());
     }
     Result<void> on_connected() {
         ++connected;

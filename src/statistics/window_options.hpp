@@ -10,6 +10,7 @@ namespace coinbase_ticker_statistics {
 /** Runtime window rules, independent of configuration syntax and networking. */
 struct WindowOptions {
     Duration duration{300};
+    SampleCount max_observations_per_symbol{100'000};
 };
 
 /** Supported windows span 1 second to 365 days, safely representable in nanoseconds. */
@@ -17,6 +18,8 @@ struct WindowOptions {
     constexpr auto maximum_duration = std::chrono::days{365};
     if (options.duration <= Duration::zero() || options.duration > maximum_duration)
         return fail(ErrorCode::InvalidConfiguration, "Window duration must be between 1 second and 365 days");
+    if (options.max_observations_per_symbol == 0)
+        return fail(ErrorCode::InvalidConfiguration, "Window observation limit must be positive");
     return {};
 }
 

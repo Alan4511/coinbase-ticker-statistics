@@ -3,7 +3,7 @@
 #include "output/csv_config.hpp"
 #include "output/csv_writer.hpp"
 #include "output/sink.hpp"
-#include <runtime/execution_context.hpp>
+#include <runtime/run_control_handle.hpp>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/steady_timer.hpp>
@@ -19,7 +19,7 @@ namespace coinbase_ticker_statistics {
  */
 class CsvSink {
   public:
-    CsvSink(boost::asio::io_context &io, CsvConfig config, ExecutionContext &context);
+    CsvSink(boost::asio::io_context &io, CsvConfig config, RunControlHandle &control_handle);
     CsvSink(const CsvSink &) = delete;
     CsvSink &operator=(const CsvSink &) = delete;
 
@@ -36,7 +36,7 @@ class CsvSink {
     [[nodiscard]] Result<void> flush_pending();
 
     CsvConfig config_;
-    ExecutionContext &context_;
+    RunControlHandle &control_handle_;
     boost::asio::steady_timer flush_timer_;
     // The writer borrows the stream, which must outlive it.
     std::ofstream stream_;

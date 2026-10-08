@@ -1,0 +1,8 @@
+add_library(coinbase_ticker_statistics_common format_timestamp.cpp)
+
+target_link_libraries(coinbase_ticker_statistics_common PUBLIC Boost::headers)
+target_include_directories(coinbase_ticker_statistics_common PUBLIC
+    "${PROJECT_SOURCE_DIR}/src"
+)
+
+coinbase_ticker_statistics_enable_warnings(coinbase_ticker_statistics_common)
