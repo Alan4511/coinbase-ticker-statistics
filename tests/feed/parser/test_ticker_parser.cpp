@@ -113,8 +113,9 @@ TEST(TickerParser, RejectsMalformedTickerMessages) {
         ticker[field].str = json;
         const auto result = parse_ticker_message(glz::write_json(ticker).value());
         ASSERT_RESULT_ERROR(result, error);
-        if (error == ErrorCode::OutOfRange)
+        if (error == ErrorCode::OutOfRange) {
             EXPECT_TRUE(result.error().message.contains("price")) << result.error().message;
+        }
     }
 }
 

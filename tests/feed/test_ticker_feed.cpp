@@ -120,8 +120,9 @@ TEST(TickerFeed, PropagatesParserAndConsumerFailures) {
         EXPECT_EQ(client.handler.ticker_updates.size(), 1U);
         EXPECT_EQ(client.feed->counts().received_messages, consumer_failure ? 1U : 2U);
         EXPECT_EQ(client.feed->counts().ticker_updates, 1U);
-        if (consumer_failure)
+        if (consumer_failure) {
             EXPECT_EQ(client.handler.outcome.error().message, "consumer output failed");
+        }
     }
 }
 

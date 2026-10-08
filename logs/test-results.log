@@ -229,13 +229,13 @@ Command: clang++ -fsanitize=address /private/tmp/sparkland-asan-probe.cpp -o /pr
 Probe source: int main() { return 0; }
 The empty program exits with code 134 during ASan initialization, both inside and outside the sandbox:
 AddressSanitizer: CHECK failed: sanitizer_malloc_mac.inc:189 "((!asan_init_is_running)) != (0)" (0x0, 0x0)
-No ASan application pass is claimed.
+No local macOS ASan pass is claimed; Linux sanitizer results appear below.
 
 Linux verification
-GitHub Actions run: https://github.com/Alan4511/coinbase-ticker-statistics/actions/runs/37761507988
-Commit: fef50bf06dbe5655a5a56f2eb9e31e47c8ec08ff; Debian trixie, 2026-10-08.
-Clang Release: 49/49 tests passed; 7 CSV fixture rows independently verified.
-GCC Release: compilation failed on Glaze name shadowing, an OpenSSL macro cast,
-and null-dereference diagnostics in optimized Boost headers.
-Clang ASan/UBSan: linking failed because compiler-rt sanitizer libraries were absent.
-The CI fixes require a new Linux run; no Linux sanitizer pass is claimed.
+GitHub Actions run: https://github.com/Alan4511/coinbase-ticker-statistics/actions/runs/37763498024
+Commit: fd9a768e45ddc6251638ea7868f5b484c2b661af; Debian trixie, 2026-10-08.
+Clang Release and Clang ASan/UBSan: each passed 49/49 tests and independently
+verified all 7 CSV fixture rows.
+GCC Release: production compiled; test compilation stopped on an unbraced
+conditional GoogleTest assertion. The assertion braces and revised GCC warning
+policy require a subsequent CI run.

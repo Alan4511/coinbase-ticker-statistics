@@ -56,7 +56,7 @@ flowchart LR
 | Boost.DateTime | Reuse ISO/calendar parsing within the existing Boost dependency; canonical UTC comparison replaces manual field checks. | Comparison adds formatting/temporary strings on the event-loop thread. Manual guards avoid that work but duplicate layout checks. Precision/range checks prevent truncation/overflow; performance impact is unmeasured. |
 | Boost.Multiprecision `uint128_t` | Fixed-width, allocation-free sums without compiler-specific integer extensions. | Wider arithmetic, especially division, costs more than native 64-bit operations; 64-bit sums cannot cover the supported price/count range. |
 
-- GCC null-dereference diagnostics remain warnings because they flag optimized Boost headers; other selected warnings remain errors.
+- Selected warnings are fatal. The optional null-dereference check is enabled on Clang; GCC's optimization-sensitive reports in Boost/standard headers and valid test code are omitted. ASan/UBSan CI provides separate runtime checks.
 
 ## Ownership and extension points
 

@@ -19,14 +19,13 @@ function(coinbase_ticker_statistics_enable_warnings target)
             -Wold-style-cast
             -Woverloaded-virtual
             -Wnon-virtual-dtor
-            -Wnull-dereference
             -Wswitch-enum
             -Werror
         >
+        # GCC's optional null-dereference heuristic reports false positives in
+        # optimized Boost/std headers and valid test code; retain it on Clang.
+        $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wnull-dereference>
         $<$<CXX_COMPILER_ID:GNU>:
-            # Optimized Boost headers trigger this diagnostic even as system includes.
-            # Retain the warning without promoting it to an error; other warnings remain fatal.
-            -Wno-error=null-dereference
             -Wlogical-op
             -Wduplicated-cond
             -Wduplicated-branches
